@@ -1,0 +1,29 @@
+div:where(.swal2-container) div:where(.swal2-popup){
+    padding: 15px 0 !important;
+}
+
+h2#swal2-title {
+    text-align: left !important;
+    margin: 0 !important;
+    padding: 5px 1.5rem !important;
+    font-size: 18px !important;
+}
+
+.swal2-html-container{
+    text-align: left !important;
+    padding-top: 0 !important;
+    font-size: 13px !important;
+}
+
+div:where(.swal2-container) div:where(.swal2-actions){
+    margin: 1.25em !important;
+    margin-bottom: 0 !important;
+    justify-content: unset !important;
+}
+
+div:where(.swal2-container) button:where(.swal2-styled):where(.swal2-confirm),
+div:where(.swal2-container) button:where(.swal2-styled):where(.swal2-cancel)
+{
+    font-size: 12px !important;
+    min-width: 80px !important;
+}

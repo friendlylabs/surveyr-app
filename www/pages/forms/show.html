@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Surveyr Collect</title>
+
+    <link href="/js/libs/toast/toast.min.css" rel="stylesheet">
+    <link href="/css/app.css" id="appCss" rel="stylesheet">
+    <link href="/fonts/fontawesome/all.css" id="fontawesomeCss" rel="stylesheet">
+
+    <script src="/js/libs/toast/toast.min.js" id="toastJs"></script>
+    <script src="/vendor/dexie/dexie.min.js" id="dexieJs"></script>
+    <script src="/js/database.js" id="databaseJs"></script>
+
+    <link rel="stylesheet" href="/vendor/surveyjs/default.min.css">
+    <script src="/vendor/surveyjs/survey.core.min.js"></script>
+    <script src="/vendor/surveyjs/survey-js-ui.min.js"></script>
+
+    <script src="/vendor/surveyjs/themes/index.min.js"></script>
+
+    <style>
+        body{margin: 0; padding: 0; font-family: Arial, sans-serif;}
+        .recordBtn { height: 35px; width: 35px; background: #F8BBD0; border: none; border-radius: 4px; cursor: pointer; }
+        .saveRecord { height: 35px; width: 35px; background: #C8E6C9; border: none; border-radius: 4px; cursor: pointer; }
+
+        .saveRecord i { color: green; }
+        .recordBtn i { color: crimson; }
+
+        .recordBtn:hover { background: #F48FB1; }
+        .saveRecord:hover { background: #A5D6A7; }
+        .sd-description { display: none;}
+    </style>
+</head>
+<body>
+    
+    <div id="surveyContainer" style="height: 100vh;"></div>
+
+    <script src="/vendor/jquery/jquery.min.js" id="jqueryJs"></script>
+    <script src="/vendor/utils/sweetalert.min.js" id="swalJs"></script>
+    <script>
+
+        // get parameter id from url
+        const urlParams = new URLSearchParams(window.location.search);
+        const formId = urlParams.get('id');
+
+        const surveyContainer = document.getElementById('surveyContainer');
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                var form = await getFormById(formId);
+                var formContent = form.content;
+                var formTheme = form.theme ? form.theme : 'Default';
+                var survey = new Survey.Model(formContent);
+
+                survey.render(surveyContainer);
+                survey.applyTheme(SurveyTheme[formTheme + 'LightPanelless']);
+                survey.onComplete.add(saveSurveyData);
+            } catch (e) {
+                toast.error({ message: 'An error occurred while loading the form' });
+                console.error(e);
+            }
+        });
+
+        async function saveSurveyData(survey) {
+            try {
+                var submission = await addSubmission({
+                    form_id: formId,
+                    content: survey.data
+                });
+
+                if(!submission){
+                    toast.error({ message: 'An error occurred while saving the form' });
+                    return;
+                }
+
+                toast.success({ message: 'Form saved successfully' });
+                submitAnotherFormPrompt();
+            } catch (e) {
+                toast.error({ message: 'An error occurred while saving the form' });
+                console.error(e);
+            }
+        }
+
+        function submitAnotherFormPrompt(){
+            Swal.fire({
+                title: 'Form saved.',
+                text: 'Would you like to submit another form?',
+                showCancelButton: true,
+                confirmButtonText: 'Yes',
+                cancelButtonText: 'No'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.reload();
+                } else {
+                    window.location.href = '/pages/home.html';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
