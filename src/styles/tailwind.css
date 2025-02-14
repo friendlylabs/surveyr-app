@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@import "daisyui";
+@tailwind utilities;
+
+header{
+    max-height: 60px;
+    height: 60px;
+    box-shadow: rgba(0, 0, 0, 0.15) 0px 2px 2.6px;
+}
+
+main{
+    max-height: calc(100vh - 120px);
+    height: calc(100vh - 120px);
+    max-width: 570px;
+    width: 100%;
+    margin: 0 auto;
+    overflow-y: hidden;
+}
+
+footer{
+    max-height: 60px;
+    height: 60px;
+}
+
+.overview-icon{
+    font-size: 3rem;
+}
+
+.main-bottom{
+    width: 100%;
+}
+
+.navbar{
+    box-shadow: rgba(0, 0, 0, 0.15) 0px -2px 2.6px;
+}
+
+[disabled] {
+    opacity: 0.5;
+}
+
+[data-theme="dim"] input {
+    background: unset;
+}
+
+[data-theme="dim"] .peer-focus\:bg-body {
+    background: #2a303c !important;
+}
+
+[data-theme="lofi"] .peer-focus\:bg-body {
+    background: white !important;
+}
