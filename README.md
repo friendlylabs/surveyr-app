@@ -14,8 +14,6 @@ This app enables you to collect responses to your forms offline. All responses a
   <img src="https://surveyr.saasify.io/assets/pwa/demo.gif" alt="Surveyr Demo" />
 </p>
 
----
-
 ### 🚀 Quick Start
 1. Install the latest version of **Node.js** and **npm**, in this project we are using Node.js v22.13.1 and npm v10.9.2 respectively.
 2. Install the Cordova CLI by running `npm install -g cordova`.
