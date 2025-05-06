@@ -105,8 +105,8 @@
                                 let formattedTitle = form.title.charAt(0).toUpperCase() + form.title.slice(1).toLowerCase();
 
                                 formList += `
-                                    <div class="bg-base-200 p-4 pb-8 mb-2 rounded relative">
-                                        <a href="javascript:void()">
+                                    <div class="bg-base-200 p-4 pb-8 mb-2 rounded relative form-list-item">
+                                        <a href="javascript:void(0)">
                                             <h4 class="text-base text-xs font-bold opacity-60">${formattedTitle}</h4>
                                             <i class="absolute end-4 top-2 fa-regular fa-files overview-icon opacity-10"></i>
                                             <input type="checkbox" data-form-id="${form.id}" class="form-control form-list-box checkbox-primary absolute top-4 end-4 z-2" />
@@ -153,6 +153,22 @@
                                 message: 'An error occurred while fetching forms. Please try again.'
                             });
                     },
+                    complete: function() {                        
+                         // on form list item click, check and uncheck the form
+                        document.querySelectorAll('.form-list-item').forEach(function(item) {
+                            item.addEventListener('click', function(e) {
+                                // Don't toggle if clicking directly on the checkbox
+                                if (e.target.type === 'checkbox') {
+                                    return;
+                                }
+                                
+                                var checkbox = this.querySelector('input[type="checkbox"]');
+                                checkbox.checked = !checkbox.checked;
+                                // Trigger change event to update the sync button state
+                                checkbox.dispatchEvent(new Event('change'));
+                            });
+                        });
+                    }
                 });
             }
 
