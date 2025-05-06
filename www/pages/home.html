@@ -98,7 +98,7 @@
                             let formSubmissions = await countSubmissionsByFormId(form.id);
                             
                             recentForms.innerHTML += `
-                                <div class="bg-base-200 p-4 pb-5 mb-1 rounded relative cm-toggle" id="form-${form.id}"
+                                <div class="bg-base-200 p-4 pb-5 mb-1 rounded relative cm-toggle cm-toggle-click" id="form-${form.id}"
                                     data-cm-target="#formCMenu" data-cm-bind='{"formId": "${form.id}"}'>
                                     <a href="javascript:void(0)">
                                         <h4 class="text-xs font-bold opacity-60">${formattedTitle}</h4>
