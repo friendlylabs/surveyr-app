@@ -1,4 +1,0 @@
-{"plugins":[
-    "cordova-plugin-qr-barcode-scanner",
-    "cordova-plugin-inappbrowser"
-]}

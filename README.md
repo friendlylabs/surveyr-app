@@ -1,30 +1,34 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/friendlylabs/surveyr/refs/heads/main/public/assets/images/brand/logo.png" alt="Surveyr Logo" width="200" />
-</p>
-
-# Surveyr App
+# Surveyr Collect
 
 Collect data anytime, anywhere — even offline!
 
-**Surveyr App** is a companion to **Surveyr**, an open-source form builder designed for creating engaging surveys, questionnaires, quizzes, and polls.
+Collect is a companion to **Surveyr**, an open-source form builder designed for creating engaging surveys, questionnaires, quizzes, and polls.
 
-This app enables you to collect responses to your forms offline. All responses are stored locally on your device and then sync the data when you're back online.
+This version is based on React Native built with Expo Router, where as the initial version was initially implemented with [cordova](https://github.com/friendlylabs/collect/tree/cordova)
 
-<p align="center">
-  <img src="https://surveyr.saasify.io/assets/pwa/demo.gif" alt="Surveyr Demo" />
-</p>
+## Features
 
----
+- **QR Code Authentication**: Scan QR codes to automatically authenticate and access survey projects
+- **Manual Login**: Enter server details, credentials, and project ID manually
+- **Secure Storage**: User credentials and project data are stored securely using AsyncStorage
+- **Camera Integration**: Built-in camera support for QR code scanning
+- **Toast Notifications**: User-friendly feedback for all operations
+- **Modern UI**: Clean, responsive design with proper loading states
+- **Offline Support**: Continue collecting data without an internet connection
 
-### 🚀 Quick Start
-1. Install the latest version of **Node.js** and **npm**, in this project we are using Node.js v22.13.1 and npm v10.9.2 respectively.
-2. Install the Cordova CLI by running `npm install -g cordova`.
-3. Clone the repository and navigate to the project directory.
-4. Run the command `cordova prepare`, this will install all the necessary dependencies and plugins required for the project.
+## Limitations
 
+The main data collection functionality relies on SurveyJS, which currently lacks a native React Native implementation. As a result, survey forms are rendered within a WebView. This approach may not deliver the optimal user experience and requires additional effort to ensure the app functions as intended.
 
-### ⚠️ Note
-This is an alpha version serving as a proof of concept, not a fully-featured application. Built using **Cordova**.
+## Get started
 
-### 🚧 Current Limitations
-- The app currently supports only non-live forms. It cannot cache dynamic data fetched from the server in real time.
+1. Install dependencies
+
+   ```bash
+   npm install
+   ```
+2. Start the app
+
+   ```bash
+   npx expo start
+   ```
