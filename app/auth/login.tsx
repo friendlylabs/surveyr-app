@@ -13,6 +13,7 @@ import {
     View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { database } from '../../services/database';
 
 interface LoginResponse {
   status: boolean;
@@ -78,16 +79,34 @@ export default function LoginScreen() {
 
   const handleLoginResponse = async (response: LoginResponse) => {
     if (response.status) {
+      const newProjectId = response.projectId || '';
+      
+      // Get current project ID before updating
+      const currentProjectId = await AsyncStorage.getItem('project');
+      
+      console.log('Manual login result:', { newProjectId, currentProjectId });
+      
       await AsyncStorage.multiSet([
         ['token', response.token || ''],
-        ['project', response.projectId || ''],
+        ['project', newProjectId],
         ['user', JSON.stringify(response.user || {})],
       ]);
+
+      // Force database to switch projects if different
+      if (currentProjectId !== newProjectId) {
+        console.log(`Manual login: Switching from project ${currentProjectId} to ${newProjectId}`);
+        try {
+          await database.switchProject(newProjectId);
+        } catch (dbError) {
+          console.error('Database switch error during manual login:', dbError);
+          // Continue anyway, the database will reinitialize when needed
+        }
+      }
 
       Toast.show({
         type: 'success',
         text1: 'Login Successful',
-        text2: 'Welcome back!',
+        text2: newProjectId !== currentProjectId ? 'Switched to new project' : 'Welcome back!',
       });
 
       router.push('/home');
