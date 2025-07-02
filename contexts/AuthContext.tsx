@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { database } from '../services/database';
 
 interface User {
   fullname: string;
@@ -107,11 +108,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async (): Promise<void> => {
     try {
+      // Clean up database connections and project data
+      await database.cleanupOnLogout();
+      
+      // Clear AsyncStorage
       await AsyncStorage.multiRemove(['token', 'user', 'projectUrl', 'project']);
       setToken(null);
       setUser(null);
       setProjectUrl(null);
       setIsAuthenticated(false);
+      
+      console.log('Logout completed successfully');
     } catch (error) {
       console.error('Logout failed:', error);
     }
