@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { database } from '../services/database';
 
 export default function Index() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -46,6 +47,7 @@ export default function Index() {
       // Check if all required data exists
       if (token[1] && projectUrl[1] && user[1]) {
         console.log('Valid session found, will redirect to home after splash');
+        console.log('URL:', projectUrl[1]);
         
         // Don't navigate immediately, let splash screen control the timing
         // Store that we should navigate after splash
@@ -142,22 +144,39 @@ export default function Index() {
 
       if (result.status) {
         const projectUrl = new URL(data);
+        const newProjectId = result.projectId;
         
-        // Store authentication data
+        // Get current project ID before updating
+        const currentProjectId = await AsyncStorage.getItem('project');
+        
+        console.log('QR Code scan result:', { newProjectId, currentProjectId });
+        
+        // Store authentication data first
         await AsyncStorage.multiSet([
           ['token', result.token],
-          ['project', result.projectId],
+          ['project', newProjectId],
           ['user', JSON.stringify(result.user)],
           ['projectUrl', projectUrl.origin + '/api/'],
         ]);
 
+        // Force database to switch projects if different
+        if (currentProjectId !== newProjectId) {
+          console.log(`Switching from project ${currentProjectId} to ${newProjectId}`);
+          try {
+            await database.switchProject(newProjectId);
+          } catch (dbError) {
+            console.error('Database switch error:', dbError);
+            // Continue anyway, the database will reinitialize when needed
+          }
+        }
+
         Toast.show({
           type: 'success',
           text1: 'Authentication Successful',
-          text2: 'Redirecting to home...',
+          text2: newProjectId !== currentProjectId ? 'Switched to new project' : 'Redirecting to home...',
         });
 
-        // Navigate to home page (you'll need to create this)
+        // Navigate to home page
         router.replace('./home' as any);
       } else {
         Toast.show({
@@ -167,6 +186,7 @@ export default function Index() {
         });
       }
     } catch (error) {
+      console.error('QR Code scan error:', error);
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         Toast.show({
           type: 'error',
