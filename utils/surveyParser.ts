@@ -105,6 +105,7 @@ export interface ParsedChoice {
   text: string;
   enableIf?: string;
   visibleIf?: string;
+  imageLink?: string; // For imagepicker questions
 }
 
 export interface ParsedColumn {
@@ -159,6 +160,9 @@ export interface ParsedQuestion {
   imageHeight?: number;
   imageWidth?: number;
   multiSelect?: boolean;
+  contentMode?: string; // 'image' or 'video' for imagepicker
+  imageFit?: string;   // 'cover', 'contain', 'fill', 'scale-down'
+  showLabel?: boolean; // Whether to show labels on images
   
   // For rating
   rateMin?: number;
@@ -512,7 +516,8 @@ function parseChoices(choices: any[]): ParsedChoice[] {
       value: choice.value || choice.name || choice.text,
       text: choice.text || choice.title || choice.value || choice.name,
       enableIf: choice.enableIf,
-      visibleIf: choice.visibleIf
+      visibleIf: choice.visibleIf,
+      imageLink: choice.imageLink // For imagepicker questions
     };
   });
 }
@@ -587,10 +592,17 @@ function parseQuestion(question: any, parentId?: string): ParsedQuestion {
       break;
       
     case 'imagepicker':
+      // Parse image choices including imageLink property
       parsed.choices = parseChoices(question.choices);
+      
+      // Add support for imagepicker specific properties
       parsed.imageHeight = question.imageHeight;
       parsed.imageWidth = question.imageWidth;
       parsed.multiSelect = question.multiSelect;
+      parsed.contentMode = question.contentMode || 'image';
+      parsed.imageFit = question.imageFit || 'cover';
+      parsed.showLabel = question.showLabel !== false;
+      
       if (question.choicesByUrl) {
         parsed.choicesByUrl = {
           url: question.choicesByUrl.url,
@@ -844,49 +856,17 @@ export function getQuestionByName(parsedSurvey: ParsedSurvey, name: string): Par
 // Validate survey data against parsed survey
 export function validateSurveyData(parsedSurvey: ParsedSurvey, surveyData: Record<string, any>): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
-  const allQuestions = getAllQuestions(parsedSurvey);
   
-  for (const question of allQuestions) {
-    const value = surveyData[question.name];
-    
-    // Check if question is visible and enabled
-    const isVisible = !question.visibleIf || evaluateCondition(question.visibleIf, surveyData);
-    const isEnabled = !question.enableIf || evaluateCondition(question.enableIf, surveyData);
-    
-    if (!isVisible || !isEnabled) continue;
-    
-    // Check required fields
-    const isRequired = question.isRequired || 
-                      (question.requiredIf && evaluateCondition(question.requiredIf, surveyData));
-    
-    if (isRequired && (value === undefined || value === null || value === '')) {
-      errors.push(`${question.title || question.name} is required`);
+  // Only validate questions on visible pages
+  for (const page of parsedSurvey.pages) {
+    // Skip validation for invisible pages
+    if (page.visibleIf && !evaluateCondition(page.visibleIf, surveyData)) {
+      continue;
     }
     
-    // Type-specific validation
-    if (value !== undefined && value !== null && value !== '') {
-      switch (question.type) {
-        case 'text':
-          if (question.variant === 'email' && !isValidEmail(String(value))) {
-            errors.push(`${question.title || question.name} must be a valid email`);
-          }
-          if (question.variant === 'number' && isNaN(Number(value))) {
-            errors.push(`${question.title || question.name} must be a number`);
-          }
-          if (question.minLength && String(value).length < question.minLength) {
-            errors.push(`${question.title || question.name} must be at least ${question.minLength} characters`);
-          }
-          if (question.maxLength && String(value).length > question.maxLength) {
-            errors.push(`${question.title || question.name} must be no more than ${question.maxLength} characters`);
-          }
-          break;
-          
-        case 'file':
-          if (question.multiple && !Array.isArray(value)) {
-            errors.push(`${question.title || question.name} must be an array for multiple files`);
-          }
-          break;
-      }
+    // Validate all questions on this visible page
+    for (const element of page.elements) {
+      validateElement(element, surveyData, errors);
     }
   }
   
@@ -894,6 +874,59 @@ export function validateSurveyData(parsedSurvey: ParsedSurvey, surveyData: Recor
     isValid: errors.length === 0,
     errors
   };
+}
+
+// Helper function to validate an element (question or panel)
+function validateElement(question: ParsedQuestion, surveyData: Record<string, any>, errors: string[]): void {
+  const value = surveyData[question.name];
+  
+  // Check if element is visible and enabled
+  const isVisible = !question.visibleIf || evaluateCondition(question.visibleIf, surveyData);
+  const isEnabled = !question.enableIf || evaluateCondition(question.enableIf, surveyData);
+  
+  if (!isVisible || !isEnabled) return;
+  
+  // For panels, validate child elements
+  if (question.elements) {
+    for (const childElement of question.elements) {
+      validateElement(childElement, surveyData, errors);
+    }
+    return;
+  }
+    
+  // Check required fields
+  const isRequired = question.isRequired || 
+                    (question.requiredIf && evaluateCondition(question.requiredIf, surveyData));
+  
+  if (isRequired && (value === undefined || value === null || value === '')) {
+    errors.push(`${question.title || question.name} is required`);
+  }
+  
+  // Type-specific validation
+  if (value !== undefined && value !== null && value !== '') {
+    switch (question.type) {
+      case 'text':
+        if (question.variant === 'email' && !isValidEmail(String(value))) {
+          errors.push(`${question.title || question.name} must be a valid email`);
+        }
+        if (question.variant === 'number' && isNaN(Number(value))) {
+          errors.push(`${question.title || question.name} must be a number`);
+        }
+        if (question.minLength && String(value).length < question.minLength) {
+          errors.push(`${question.title || question.name} must be at least ${question.minLength} characters`);
+        }
+        if (question.maxLength && String(value).length > question.maxLength) {
+          errors.push(`${question.title || question.name} must be no more than ${question.maxLength} characters`);
+        }
+        break;
+        
+      case 'file':
+        if (question.multiple && !Array.isArray(value)) {
+          errors.push(`${question.title || question.name} must be an array for multiple files`);
+        }
+        break;
+    }
+  }
 }
 
 // Validate only questions on a specific page
@@ -1101,11 +1134,16 @@ export function createSurveyState(parsedSurvey: ParsedSurvey) {
              (question.requiredIf ? evaluateCondition(question.requiredIf, this.surveyData) : false);
     },
     
+    isPageVisible(page: ParsedPage): boolean {
+      // Check if the page has a visibleIf condition and evaluate it
+      return !page.visibleIf || evaluateCondition(page.visibleIf, this.surveyData);
+    },
+    
     canGoToNextPage(): boolean {
       const currentPage = this.getCurrentPage();
       
       // Check if page is visible
-      if (currentPage.visibleIf && !evaluateCondition(currentPage.visibleIf, this.surveyData)) {
+      if (!this.isPageVisible(currentPage)) {
         return true; // Skip invisible pages
       }
       
@@ -1116,14 +1154,42 @@ export function createSurveyState(parsedSurvey: ParsedSurvey) {
     
     nextPage() {
       if (this.currentPageIndex < this.survey.pages.length - 1) {
+        // Move to next page
         this.currentPageIndex++;
+        
+        // Skip pages that aren't visible due to conditions
+        while (
+          this.currentPageIndex < this.survey.pages.length - 1 && 
+          !this.isPageVisible(this.survey.pages[this.currentPageIndex])
+        ) {
+          this.currentPageIndex++;
+        }
       }
     },
     
     previousPage() {
       if (this.currentPageIndex > 0) {
+        // Move to previous page
         this.currentPageIndex--;
+        
+        // Skip pages that aren't visible due to conditions
+        while (
+          this.currentPageIndex > 0 && 
+          !this.isPageVisible(this.survey.pages[this.currentPageIndex])
+        ) {
+          this.currentPageIndex--;
+        }
       }
+    },
+    
+    // Check if there are any visible pages after the current one
+    hasVisiblePagesAfterCurrent(): boolean {
+      for (let i = this.currentPageIndex + 1; i < this.survey.pages.length; i++) {
+        if (this.isPageVisible(this.survey.pages[i])) {
+          return true;
+        }
+      }
+      return false;
     },
     
     validateCurrentPage() {
