@@ -1,4 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -11,10 +15,13 @@ import {
     View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
-import { WebView } from 'react-native-webview';
+import { NativeSurveyRenderer } from '../../components/NativeSurveyRenderer';
 import TopBar from '../../components/TopBar';
 import { useTheme } from '../../contexts/ThemeContext';
 import { database, Form } from '../../services/database';
+import { createSurveyState, parseSurveyJS, type SurveyState } from '../../utils/surveyParser';
+
+console.log(FileSystem.documentDirectory);
 
 export default function ShowSurveyScreen() {
     const router = useRouter();
@@ -23,7 +30,11 @@ export default function ShowSurveyScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [form, setForm] = useState<Form | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [webViewKey, setWebViewKey] = useState(0);
+    const [uploadedFileIds, setUploadedFileIds] = useState<number[]>([]);
+    const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+    const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean>(false);
+    const [surveyState, setSurveyState] = useState<SurveyState | null>(null);
+    const [surveyKey, setSurveyKey] = useState(0);
 
     const loadForm = useCallback(async () => {
         if (!formId) {
@@ -45,6 +56,19 @@ export default function ShowSurveyScreen() {
             }
 
             setForm(formData);
+
+            // Initialize native survey parser
+            try {
+                const surveyJSON = JSON.parse(formData.content);
+                const parsedSurvey = parseSurveyJS(surveyJSON);
+                const nativeSurveyState = createSurveyState(parsedSurvey);
+                setSurveyState(nativeSurveyState);
+                console.log('Survey parsed successfully for native rendering');
+            } catch (parseError) {
+                console.error('Survey parsing error:', parseError);
+                setError('Failed to parse survey for native rendering');
+                return;
+            }
         } catch (err) {
             console.error('Error loading form:', err);
             setError('An error occurred while loading the form. Please try again.');
@@ -53,38 +77,200 @@ export default function ShowSurveyScreen() {
         }
     }, [formId]);
 
-    useEffect(() => {
-        loadForm();
-    }, [loadForm]);
-
-    const handleWebViewMessage = async (event: any) => {
+    const requestLocationPermission = useCallback(async () => {
         try {
-            const message = JSON.parse(event.nativeEvent.data);
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            setLocationPermissionGranted(status === 'granted');
             
-            if (message.type === 'SURVEY_COMPLETE') {
-                await handleSurveyComplete(message.data);
-            } else if (message.type === 'SURVEY_ERROR') {
-                console.error('Survey error:', message.error);
+            if (status === 'granted') {
+                const location = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High,
+                });
+                setCurrentLocation(location);
+                console.log('Location obtained:', location);
+            } else {
+                console.log('Location permission denied');
                 Toast.show({
-                    type: 'error',
-                    text1: 'Survey Error',
-                    text2: message.error || 'An error occurred in the survey',
+                    type: 'info',
+                    text1: 'Location Permission',
+                    text2: 'Location access denied. Some survey features may be limited.',
                 });
             }
-        } catch (err) {
-            console.error('Error handling WebView message:', err);
+        } catch (error) {
+            console.error('Error requesting location permission:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Location Error',
+                text2: 'Failed to get location. Please check your settings.',
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        loadForm();
+        requestLocationPermission();
+    }, [loadForm, requestLocationPermission]);
+
+    // Update survey theme when app theme changes
+    useEffect(() => {
+        // Native surveys automatically inherit the app theme through the theme context
+        // No additional action needed for native rendering
+    }, [isDarkTheme]);
+
+    const handleNativeFileUpload = async (questionName: string, allowedTypes?: string[], maxFileSize?: number) => {
+        try {
+            // Show document picker
+            const result = await DocumentPicker.getDocumentAsync({
+                type: allowedTypes || '*/*',
+                copyToCacheDirectory: true,
+                multiple: false,
+            }) as DocumentPicker.DocumentPickerResult;
+
+            if (result.canceled) {
+                return null; // User canceled
+            }
+
+            const file = result.assets[0];
+            
+            // Check file size if specified
+            if (maxFileSize && file.size && file.size > maxFileSize) {
+                Toast.show({
+                    type: 'error',
+                    text1: 'File Too Large',
+                    text2: `File must be smaller than ${Math.round(maxFileSize / (1024 * 1024))}MB`,
+                });
+                throw new Error('File too large');
+            }
+
+            // Generate date-based filename following your convention
+            const now = new Date();
+            const datePrefix = now.toISOString().split('T')[0]; // YYYY-MM-DD
+            const hash = Math.random().toString(36).substring(2, 15) + 
+                        Math.random().toString(36).substring(2, 15);
+            const fileExtension = file.name.split('.').pop() || '';
+            const hashedFileName = `${hash}.${fileExtension}`;
+            const localFileName = `${datePrefix}-${hashedFileName}`;
+
+            // Create attachments directory if it doesn't exist
+            const attachmentsDir = `${FileSystem.documentDirectory}surveyr/attachments/`;
+            await FileSystem.makeDirectoryAsync(attachmentsDir, { intermediates: true });
+
+            // Copy file to our attachments directory
+            const localFilePath = `${attachmentsDir}${localFileName}`;
+            await FileSystem.copyAsync({
+                from: file.uri,
+                to: localFilePath
+            });
+
+            // Get project URL from AsyncStorage to construct server URL
+            const projectUrl = await AsyncStorage.getItem('projectUrl');
+            if (!projectUrl) {
+                throw new Error('Project URL not found in storage');
+            }
+            
+            // Remove '/api/' suffix and add storage path
+            const baseUrl = projectUrl.replace('/api/', '');
+            const serverUrl = `${baseUrl}/storage/attachments/${datePrefix.replace(/-/g, '/')}/${hashedFileName}`;
+
+            // Save file record to database
+            const fileRecord = await database.addFile({
+                local_filename: localFileName,
+                original_filename: file.name,
+                server_url: serverUrl,
+                local_path: localFilePath,
+                file_size: file.size || undefined,
+                mime_type: file.mimeType || undefined,
+                form_id: formId,
+                is_synced: false,
+                created_at: new Date().toISOString()
+            });
+
+            // Track uploaded file for potential submission linking
+            setUploadedFileIds(prev => [...prev, fileRecord]);
+
+            console.log('File uploaded successfully:', {
+                original: file.name,
+                local: localFileName,
+                serverUrl: serverUrl,
+                fileId: fileRecord
+            });
+
+            return {
+                fileUrl: serverUrl,
+                fileName: file.name,
+                fileSize: file.size,
+                localPath: localFilePath
+            };
+
+        } catch (error) {
+            console.error('File upload error:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Upload Failed',
+                text2: 'Failed to upload file. Please try again.',
+            });
+            throw error;
         }
     };
 
-    const handleSurveyComplete = async (surveyData: any) => {
+    const handleNativeLocationRequest = async (questionName: string) => {
+        try {
+            if (!locationPermissionGranted) {
+                // Request permission again if not granted
+                await requestLocationPermission();
+                
+                if (!locationPermissionGranted) {
+                    throw new Error('Location permission denied');
+                }
+            }
+
+            // Get current location
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+            });
+            
+            setCurrentLocation(location);
+
+            console.log('Location obtained for survey:', location);
+
+            return {
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+                accuracy: location.coords.accuracy,
+                timestamp: location.timestamp
+            };
+
+        } catch (error) {
+            console.error('Location request error:', error);
+            Toast.show({
+                type: 'error',
+                text1: 'Location Error',
+                text2: 'Failed to get current location. Please try again.',
+            });
+            throw error;
+        }
+    };
+
+    const handleNativeSurveyComplete = async (surveyData: Record<string, any>) => {
         try {
             if (!formId) return;
 
-            await database.addSubmission({
+            const submissionId = await database.addSubmission({
                 form_id: formId,
                 content: JSON.stringify(surveyData),
                 created_at: new Date().toISOString(),
             });
+
+            // Link any uploaded files to this submission
+            if (uploadedFileIds.length > 0) {
+                for (const fileId of uploadedFileIds) {
+                    await database.updateFileSubmissionId(fileId, submissionId);
+                }
+                console.log(`Linked ${uploadedFileIds.length} files to submission ${submissionId}`);
+            }
+
+            // Clear uploaded files for next submission
+            setUploadedFileIds([]);
 
             Toast.show({
                 type: 'success',
@@ -105,8 +291,15 @@ export default function ShowSurveyScreen() {
                     {
                         text: 'Submit Another',
                         onPress: () => {
-                            // Reload the survey
-                            setWebViewKey(prev => prev + 1);
+                            // Reset the survey
+                            if (surveyState) {
+                                surveyState.currentPageIndex = 0;
+                                surveyState.surveyData = {};
+                                surveyState.evaluator.updateData({});
+                                setSurveyState({ ...surveyState });
+                            }
+                            setUploadedFileIds([]);
+                            setSurveyKey(prev => prev + 1);
                         },
                     },
                 ]
@@ -121,76 +314,13 @@ export default function ShowSurveyScreen() {
         }
     };
 
-    const generateSurveyHTML = (form: Form) => {
-        return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-        <title>Survey</title>
-        <link rel="stylesheet" href="https://forms.camara.org/vendor/surveyjs/survey-core.min.css">
-        <script src="https://forms.camara.org/vendor/surveyjs/survey.core.min.js"></script>
-        <script src="https://forms.camara.org/vendor/surveyjs/survey-js-ui.min.js"></script>
-        <script src="https://forms.camara.org/vendor/surveyjs/themes/index.min.js"></script>
-        <style>
-        .sd-title.sd-container-modern__title{
-            display: none;
-        }
-        .sd-root-modern__wrapper {
-            background-color: ${isDarkTheme ? '#121212' : '#ffffff'};
-        }
-        body {
-            background-color: ${isDarkTheme ? '#121212' : '#ffffff'};
-            color: ${isDarkTheme ? '#ffffff' : '#000000'};
-        }
-        </style>
-    </head>
-    <body>
-        <div id="surveyContainer"></div>
-        <script>
-        try {
-            const surveyJSON = ${form.content};
-            const survey = new Survey.Model(surveyJSON);
-
-            var formTheme = "Flat";
-            var themeName = "${isDarkTheme ? 'DarkPanelless' : 'LightPanelless'}";
-            var SurveyThemeMode = SurveyTheme[formTheme + themeName];
-
-            document.addEventListener('DOMContentLoaded', function() {
-                survey.render(document.getElementById('surveyContainer'));
-                survey.applyTheme(SurveyThemeMode);
-            });
-
-            survey.onComplete.add(function(sender) {
-                try {
-                    const surveyData = sender.data;
-                        window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'SURVEY_COMPLETE',
-                        data: surveyData
-                    }));
-                } catch (error) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'SURVEY_ERROR',
-                        error: 'Failed to process survey completion: ' + error.message
-                    }));
-                }
-            });
-        } catch (error) {
-            document.getElementById('surveyContainer').innerHTML =
-                '<div style="padding: 20px; text-align: center; color: #ff0000;">' +
-                    '<h3>Error Loading Survey</h3>' +
-                    '<p>There was an error loading this survey. Please try again.</p>' +
-                    '<p style="font-size: 12px; color: #666;">' + error.message + '</p>' +
-                '</div>';
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'SURVEY_ERROR',
-                error: 'Failed to initialize survey: ' + error.message
-            }));
-        }
-        </script>
-    </body>
-    </html>`;
+    const handleNativeSurveyError = (error: string) => {
+        console.error('Native survey error:', error);
+        Toast.show({
+            type: 'error',
+            text1: 'Survey Error',
+            text2: error,
+        });
     };
 
     const styles = StyleSheet.create({
@@ -234,6 +364,23 @@ export default function ShowSurveyScreen() {
         webView: {
             flex: 1,
             backgroundColor: colors.background,
+        },
+        surveyLoadingOverlay: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors.background,
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+        },
+        surveyLoadingText: {
+            marginTop: 16,
+            fontSize: 16,
+            color: colors.textSecondary,
+            textAlign: 'center',
         },
     });
 
@@ -328,37 +475,32 @@ export default function ShowSurveyScreen() {
                 }
             />
             
-            <WebView
-                key={webViewKey}
-                style={styles.webView}
-                source={{ html: generateSurveyHTML(form) }}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                startInLoadingState={true}
-                onMessage={handleWebViewMessage}
-                renderLoading={() => (
-                    <View style={styles.loadingContainer}>
+            <View style={{ flex: 1 }}>
+                {/* Native Survey Renderer */}
+                {form && surveyState ? (
+                    <NativeSurveyRenderer
+                        key={surveyKey}
+                        surveyJSON={JSON.parse(form.content)}
+                        onComplete={handleNativeSurveyComplete}
+                        onError={handleNativeSurveyError}
+                        onFileUpload={handleNativeFileUpload}
+                        onLocationRequest={handleNativeLocationRequest}
+                        currentLocation={currentLocation}
+                        isDarkTheme={isDarkTheme}
+                    />
+                ) : (
+                    <View style={styles.surveyLoadingOverlay}>
                         <ActivityIndicator 
                             size="large" 
                             color={colors.primary} 
                         />
-                        <Text style={styles.loadingText}>Loading survey...</Text>
+                        <Text style={styles.surveyLoadingText}>
+                            Initializing Native Survey...{'\n'}
+                            Please wait while we prepare your survey
+                        </Text>
                     </View>
                 )}
-                onError={(syntheticEvent) => {
-                    const { nativeEvent } = syntheticEvent;
-                    console.error('WebView error: ', nativeEvent);
-                    Toast.show({
-                        type: 'error',
-                        text1: 'WebView Error',
-                        text2: 'Failed to load the survey. Please try again.',
-                    });
-                }}
-                onHttpError={(syntheticEvent) => {
-                    const { nativeEvent } = syntheticEvent;
-                    console.error('WebView HTTP error: ', nativeEvent);
-                }}
-            />
+            </View>
         </SafeAreaView>
     );
 }
