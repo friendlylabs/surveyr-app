@@ -2,15 +2,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  FlatList,
-  Modal,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
-  TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import {
   createSurveyState,
@@ -19,6 +15,24 @@ import {
   type ParsedQuestion,
   type SurveyState
 } from '../utils/surveyParser';
+import {
+  BooleanQuestion,
+  CheckboxQuestion,
+  ColorPicker,
+  DatePicker,
+  DropdownQuestion,
+  ExpressionQuestion,
+  FileUploadQuestion,
+  GeopointQuestion,
+  HtmlContent,
+  ImagePickerQuestion,
+  RadioGroupQuestion,
+  RangeSlider,
+  RankingQuestion,
+  RatingQuestion,
+  TagboxQuestion,
+  TextQuestion
+} from './survey';
 
 interface NativeSurveyRendererProps {
   surveyJSON: any;
@@ -47,6 +61,19 @@ export function NativeSurveyRenderer({
     try {
       const parsedSurvey = parseSurveyJS(surveyJSON);
       const state = createSurveyState(parsedSurvey);
+      
+      // Skip to first visible page if current page is not visible
+      const currentPage = state.getCurrentPage();
+      if (!state.isPageVisible(currentPage)) {
+        // Find the first visible page
+        for (let i = 0; i < state.survey.pages.length; i++) {
+          if (state.isPageVisible(state.survey.pages[i])) {
+            state.currentPageIndex = i;
+            break;
+          }
+        }
+      }
+      
       setSurveyState(state);
       setLoading(false);
     } catch (error) {
@@ -108,8 +135,13 @@ export function NativeSurveyRenderer({
     // Clear any validation errors
     setValidationErrors({});
     
-    if (surveyState.currentPageIndex === surveyState.survey.pages.length - 1) {
-      // Last page - validate entire survey before completion
+    // Check if this is the last page or if there are no more visible pages
+    const isLastPageOrNoMoreVisiblePages = 
+      surveyState.currentPageIndex === surveyState.survey.pages.length - 1 || 
+      !surveyState.hasVisiblePagesAfterCurrent();
+    
+    if (isLastPageOrNoMoreVisiblePages) {
+      // Last page or no more visible pages - validate entire survey before completion
       const fullSurveyValidation = validateSurveyData(surveyState.survey, surveyState.surveyData);
       
       if (!fullSurveyValidation.isValid) {
@@ -200,14 +232,23 @@ export function NativeSurveyRenderer({
           </TouchableOpacity>
         )}
         
-        <TouchableOpacity 
-          style={surveyState.currentPageIndex === surveyState.survey.pages.length - 1 ? styles.buttonPrimary : styles.buttonSecondary} 
-          onPress={handleNext}
-        >
-          <Text style={surveyState.currentPageIndex === surveyState.survey.pages.length - 1 ? styles.buttonPrimaryText : styles.buttonSecondaryText}>
-            {surveyState.currentPageIndex === surveyState.survey.pages.length - 1 ? 'Complete' : 'Next'}
-          </Text>
-        </TouchableOpacity>
+        {/* Determine if this is the last actionable page (either the last page or there are no more visible pages) */}
+        {(() => {
+          const isLastPageOrNoMoreVisiblePages = 
+            surveyState.currentPageIndex === surveyState.survey.pages.length - 1 || 
+            !surveyState.hasVisiblePagesAfterCurrent();
+            
+          return (
+            <TouchableOpacity 
+              style={isLastPageOrNoMoreVisiblePages ? styles.buttonPrimary : styles.buttonSecondary} 
+              onPress={handleNext}
+            >
+              <Text style={isLastPageOrNoMoreVisiblePages ? styles.buttonPrimaryText : styles.buttonSecondaryText}>
+                {isLastPageOrNoMoreVisiblePages ? 'Complete' : 'Next'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })()}
       </View>
     </View>
   );
@@ -248,206 +289,200 @@ function QuestionRenderer({
   const renderQuestion = () => {
     switch (question.type) {
       case 'text':
-        return (
-          <TextInput
-            style={[styles.textInput, !isEnabled && styles.disabledInput]}
-            value={value || ''}
-            onChangeText={onValueChange}
-            placeholder={question.placeholder}
-            editable={isEnabled}
-            keyboardType={getKeyboardType(question.variant)}
-            secureTextEntry={question.variant === 'password'}
-          />
-        );
+        switch (question.variant) {
+          case 'color':
+            return (
+              <ColorPicker 
+                color={value || '#ffffff'} 
+                onValueChange={onValueChange} 
+                isEnabled={isEnabled} 
+              />
+            );
+            
+          case 'date':
+            return (
+              <DatePicker 
+                value={value} 
+                onValueChange={onValueChange} 
+                isEnabled={isEnabled} 
+                mode="date"
+                placeholder={question.placeholder || "Select a date"} 
+              />
+            );
+            
+          case 'datetime-local':
+            return (
+              <DatePicker 
+                value={value} 
+                onValueChange={onValueChange} 
+                isEnabled={isEnabled} 
+                mode="datetime"
+                placeholder={question.placeholder || "Select date and time"} 
+              />
+            );
+            
+          case 'month':
+            return (
+              <DatePicker 
+                value={value} 
+                onValueChange={onValueChange} 
+                isEnabled={isEnabled} 
+                mode="month"
+                placeholder={question.placeholder || "Select a month"} 
+              />
+            );
+            
+          case 'time':
+            return (
+              <DatePicker 
+                value={value} 
+                onValueChange={onValueChange} 
+                isEnabled={isEnabled} 
+                mode="time"
+                placeholder={question.placeholder || "Select a time"} 
+              />
+            );
+            
+          case 'week':
+            return (
+              <DatePicker 
+                value={value} 
+                onValueChange={onValueChange} 
+                isEnabled={isEnabled} 
+                mode="week"
+                placeholder={question.placeholder || "Select a week"} 
+              />
+            );
+            
+          case 'range':
+            // Get min and max from question properties or use defaults
+            const min = question.min !== undefined ? Number(question.min) : 0;
+            const max = question.max !== undefined ? Number(question.max) : 10;
+            const step = question.step !== undefined ? Number(question.step) : 1;
+            
+            return (
+              <RangeSlider 
+                value={value !== undefined ? Number(value) : min}
+                minimumValue={min}
+                maximumValue={max}
+                step={step}
+                onValueChange={onValueChange}
+                isEnabled={isEnabled}
+              />
+            );
+            
+          case 'password':
+            return (
+              <TextQuestion
+                value={value}
+                onValueChange={onValueChange}
+                placeholder={question.placeholder || "Password"}
+                isEnabled={isEnabled}
+                secureTextEntry={true}
+                variant={question.variant}
+              />
+            );
+            
+          default:
+            return (
+              <TextQuestion
+                value={value}
+                onValueChange={onValueChange}
+                placeholder={question.placeholder}
+                isEnabled={isEnabled}
+                variant={question.variant}
+              />
+            );
+        }
 
       case 'comment':
         return (
-          <TextInput
-            style={[styles.textArea, !isEnabled && styles.disabledInput]}
-            value={value || ''}
-            onChangeText={onValueChange}
+          <TextQuestion
+            value={value}
+            onValueChange={onValueChange}
             placeholder={question.placeholder}
-            editable={isEnabled}
-            multiline
+            isEnabled={isEnabled}
+            multiline={true}
             numberOfLines={4}
           />
         );
 
       case 'radiogroup':
         return (
-          <View style={styles.choicesContainer}>
-            {question.choices?.map((choice) => (
-              <TouchableOpacity
-                key={choice.value}
-                style={styles.radioOption}
-                onPress={() => isEnabled && onValueChange(choice.value)}
-                disabled={!isEnabled}
-              >
-                <View style={[
-                  styles.radioCircle,
-                  value === choice.value && styles.radioSelected,
-                  !isEnabled && styles.disabledOption
-                ]} />
-                <Text style={[styles.choiceText, !isEnabled && styles.disabledText]}>
-                  {choice.text}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <RadioGroupQuestion
+            choices={question.choices || []}
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+          />
         );
 
       case 'checkbox':
         return (
-          <View style={styles.choicesContainer}>
-            {question.choices?.map((choice) => {
-              const isSelected = Array.isArray(value) && value.includes(choice.value);
-              return (
-                <TouchableOpacity
-                  key={choice.value}
-                  style={styles.checkboxOption}
-                  onPress={() => {
-                    if (!isEnabled) return;
-                    const currentValues = Array.isArray(value) ? value : [];
-                    const newValues = isSelected
-                      ? currentValues.filter(v => v !== choice.value)
-                      : [...currentValues, choice.value];
-                    onValueChange(newValues);
-                  }}
-                  disabled={!isEnabled}
-                >
-                  <View style={[
-                    styles.checkbox,
-                    isSelected && styles.checkboxSelected,
-                    !isEnabled && styles.disabledOption
-                  ]}>
-                    {isSelected && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={[styles.choiceText, !isEnabled && styles.disabledText]}>
-                    {choice.text}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <CheckboxQuestion
+            choices={question.choices || []}
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+          />
         );
 
       case 'boolean':
         return (
-          <View style={styles.booleanContainer}>
-            <Switch
-              value={value === true}
-              onValueChange={onValueChange}
-              disabled={!isEnabled}
-            />
-            <Text style={[styles.booleanLabel, !isEnabled && styles.disabledText]}>
-              {value ? 'Yes' : 'No'}
-            </Text>
-          </View>
+          <BooleanQuestion
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+          />
         );
 
       case 'rating':
         return (
-          <View style={styles.ratingContainer}>
-            {Array.from({ length: (question.rateMax || 5) - (question.rateMin || 1) + 1 }, (_, i) => {
-              const rating = (question.rateMin || 1) + i;
-              const isSelected = value === rating;
-              return (
-                <TouchableOpacity
-                  key={rating}
-                  style={[styles.ratingItem, isSelected && styles.ratingSelected]}
-                  onPress={() => isEnabled && onValueChange(rating)}
-                  disabled={!isEnabled}
-                >
-                  <Text style={[styles.ratingText, isSelected && styles.ratingTextSelected]}>
-                    {question.variant === 'stars' ? '★' : rating}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <RatingQuestion
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            rateMin={question.rateMin}
+            rateMax={question.rateMax}
+            variant={question.variant}
+          />
         );
 
       case 'html':
         return (
-          <View style={styles.htmlContainer}>
-            <Text style={styles.htmlText}>{question.html || 'HTML content'}</Text>
-          </View>
+          <HtmlContent html={question.html || 'HTML content'} />
         );
 
       case 'expression':
-        // For expression questions, we would evaluate the expression here
         return (
-          <View style={styles.expressionContainer}>
-            <Text style={styles.expressionText}>
-              Calculated value: {question.expression || 'No expression'}
-            </Text>
-          </View>
+          <ExpressionQuestion
+            expression={question.expression}
+            value={value}
+          />
         );
 
       case 'file':
         return (
-          <TouchableOpacity
-            style={[styles.fileUploadContainer, !isEnabled && styles.disabledInput]}
-            onPress={async () => {
-              if (!isEnabled || !onFileUpload) return;
-              try {
-                const result = await onFileUpload(question.name, question.allowedTypes, question.maxFileSize);
-                if (result) {
-                  onValueChange(result);
-                }
-              } catch (error) {
-                console.error('File upload failed:', error);
-              }
-            }}
-            disabled={!isEnabled}
-          >
-            <View style={styles.fileUploadContent}>
-              <Text style={[styles.fileUploadIcon, !isEnabled && styles.disabledText]}>📁</Text>
-              <Text style={[styles.fileUploadMainText, !isEnabled && styles.disabledText]}>
-                {value ? `Selected: ${value.fileName || 'File'}` : 'Upload a file'}
-              </Text>
-              {question.allowedTypes && question.allowedTypes.length > 0 && (
-                <Text style={[styles.fileUploadSubText, !isEnabled && styles.disabledText]}>
-                  Allowed types: {question.allowedTypes.join(', ')}
-                </Text>
-              )}
-              {question.maxFileSize && (
-                <Text style={[styles.fileUploadSubText, !isEnabled && styles.disabledText]}>
-                  Max size: {(question.maxFileSize / (1024 * 1024)).toFixed(1)}MB
-                </Text>
-              )}
-            </View>
-          </TouchableOpacity>
+          <FileUploadQuestion
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            questionName={question.name}
+            allowedTypes={question.allowedTypes}
+            maxFileSize={question.maxFileSize}
+            onFileUpload={onFileUpload}
+          />
         );
 
       case 'geopoint':
         return (
-          <View style={styles.geopointContainer}>
-            <TouchableOpacity
-              style={[styles.locationButton, !isEnabled && styles.disabledInput]}
-              onPress={async () => {
-                if (!isEnabled || !onLocationRequest) return;
-                try {
-                  const location = await onLocationRequest(question.name);
-                  if (location) {
-                    onValueChange(location);
-                  }
-                } catch (error) {
-                  console.error('Location request failed:', error);
-                }
-              }}
-              disabled={!isEnabled}
-            >
-              <Text style={[styles.locationButtonText, !isEnabled && styles.disabledText]}>
-                {value ? `Location: ${value.latitude?.toFixed(6)}, ${value.longitude?.toFixed(6)}` : 'Get Current Location'}
-              </Text>
-            </TouchableOpacity>
-            {value && (
-              <Text style={styles.locationAccuracy}>
-                Accuracy: ±{value.accuracy?.toFixed(0)}m
-              </Text>
-            )}
-          </View>
+          <GeopointQuestion
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            questionName={question.name}
+            onLocationRequest={onLocationRequest}
+          />
         );
 
       case 'dropdown':
@@ -479,6 +514,29 @@ function QuestionRenderer({
             value={value}
             onValueChange={onValueChange}
             isEnabled={isEnabled}
+          />
+        );
+        
+      case 'imagepicker':
+        // Transform choices to include imageLink for ImagePickerQuestion
+        const imageChoices = (question.choices || []).map(choice => ({
+          value: choice.value,
+          text: choice.text,
+          imageLink: choice.imageLink || ''
+        }));
+        
+        return (
+          <ImagePickerQuestion
+            choices={imageChoices}
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            contentMode={(question.contentMode as 'image' | 'video') || 'image'}
+            imageFit={(question.imageFit as 'cover' | 'contain' | 'fill' | 'scale-down') || 'cover'}
+            showLabel={question.showLabel !== false}
+            imageWidth={question.imageWidth}
+            imageHeight={question.imageHeight}
+            multiSelect={question.multiSelect}
           />
         );
 
@@ -513,314 +571,6 @@ function QuestionRenderer({
   );
 }
 
-// Dropdown component for single selection
-function DropdownQuestion({ 
-  choices, 
-  value, 
-  onValueChange, 
-  isEnabled, 
-  placeholder 
-}: {
-  choices: any[];
-  value: any;
-  onValueChange: (value: any) => void;
-  isEnabled: boolean;
-  placeholder: string;
-}) {
-  const [modalVisible, setModalVisible] = useState(false);
-
-  const selectedChoice = choices.find(choice => choice.value === value);
-
-  return (
-    <View>
-      <TouchableOpacity
-        style={[styles.dropdownButton, !isEnabled && styles.disabledInput]}
-        onPress={() => isEnabled && setModalVisible(true)}
-        disabled={!isEnabled}
-      >
-        <Text style={[styles.dropdownText, !isEnabled && styles.disabledText]}>
-          {selectedChoice ? selectedChoice.text : placeholder}
-        </Text>
-        <Text style={styles.dropdownArrow}>▼</Text>
-      </TouchableOpacity>
-
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Option</Text>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.modalCloseText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={choices}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.dropdownOption,
-                    value === item.value && styles.dropdownOptionSelected
-                  ]}
-                  onPress={() => {
-                    onValueChange(item.value);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={[
-                    styles.dropdownOptionText,
-                    value === item.value && styles.dropdownOptionTextSelected
-                  ]}>
-                    {item.text}
-                  </Text>
-                  {value === item.value && (
-                    <Text style={styles.dropdownCheckmark}>✓</Text>
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
-// Tagbox component for multiple selection
-function TagboxQuestion({ 
-  choices, 
-  value, 
-  onValueChange, 
-  isEnabled, 
-  placeholder 
-}: {
-  choices: any[];
-  value: any;
-  onValueChange: (value: any) => void;
-  isEnabled: boolean;
-  placeholder: string;
-}) {
-  const [modalVisible, setModalVisible] = useState(false);
-  const selectedValues = Array.isArray(value) ? value : [];
-
-  const toggleSelection = (choiceValue: string) => {
-    const isSelected = selectedValues.includes(choiceValue);
-    const newValues = isSelected
-      ? selectedValues.filter(v => v !== choiceValue)
-      : [...selectedValues, choiceValue];
-    onValueChange(newValues);
-  };
-
-  const getDisplayText = () => {
-    if (selectedValues.length === 0) return placeholder;
-    if (selectedValues.length === 1) {
-      const choice = choices.find(c => c.value === selectedValues[0]);
-      return choice ? choice.text : selectedValues[0];
-    }
-    return `${selectedValues.length} items selected`;
-  };
-
-  return (
-    <View>
-      <TouchableOpacity
-        style={[styles.dropdownButton, !isEnabled && styles.disabledInput]}
-        onPress={() => isEnabled && setModalVisible(true)}
-        disabled={!isEnabled}
-      >
-        <Text style={[styles.dropdownText, !isEnabled && styles.disabledText]}>
-          {getDisplayText()}
-        </Text>
-        <Text style={styles.dropdownArrow}>▼</Text>
-      </TouchableOpacity>
-
-      {/* Selected tags display */}
-      {selectedValues.length > 0 && (
-        <View style={styles.tagContainer}>
-          {selectedValues.map((selectedValue) => {
-            const choice = choices.find(c => c.value === selectedValue);
-            return (
-              <View key={selectedValue} style={styles.tag}>
-                <Text style={styles.tagText}>{choice ? choice.text : selectedValue}</Text>
-                {isEnabled && (
-                  <TouchableOpacity
-                    style={styles.tagRemove}
-                    onPress={() => toggleSelection(selectedValue)}
-                  >
-                    <Text style={styles.tagRemoveText}>✕</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Options</Text>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.modalCloseText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={choices}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => {
-                const isSelected = selectedValues.includes(item.value);
-                return (
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownOption,
-                      isSelected && styles.dropdownOptionSelected
-                    ]}
-                    onPress={() => toggleSelection(item.value)}
-                  >
-                    <View style={[
-                      styles.checkbox,
-                      isSelected && styles.checkboxSelected
-                    ]}>
-                      {isSelected && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={[
-                      styles.dropdownOptionText,
-                      isSelected && styles.dropdownOptionTextSelected
-                    ]}>
-                      {item.text}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-            <TouchableOpacity
-              style={styles.modalDoneButton}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.modalDoneText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
-// Ranking component for ordering items
-function RankingQuestion({ 
-  choices, 
-  value, 
-  onValueChange, 
-  isEnabled 
-}: {
-  choices: any[];
-  value: any;
-  onValueChange: (value: any) => void;
-  isEnabled: boolean;
-}) {
-  const orderedValues = Array.isArray(value) ? value : [];
-  
-  // Initialize with all choices if no value is set
-  const initializeRanking = () => {
-    if (orderedValues.length === 0) {
-      const initialOrder = choices.map(choice => choice.value);
-      onValueChange(initialOrder);
-      return initialOrder;
-    }
-    return orderedValues;
-  };
-
-  const currentOrder = orderedValues.length > 0 ? orderedValues : initializeRanking();
-
-  const moveItem = (fromIndex: number, toIndex: number) => {
-    if (!isEnabled) return;
-    
-    const newOrder = [...currentOrder];
-    const [movedItem] = newOrder.splice(fromIndex, 1);
-    newOrder.splice(toIndex, 0, movedItem);
-    onValueChange(newOrder);
-  };
-
-  const getChoiceByValue = (value: string) => {
-    return choices.find(choice => choice.value === value);
-  };
-
-  return (
-    <View style={styles.rankingContainer}>
-      <Text style={styles.rankingInstructions}>
-        Drag items to reorder them by preference (most preferred at top)
-      </Text>
-      {currentOrder.map((choiceValue, index) => {
-        const choice = getChoiceByValue(choiceValue);
-        if (!choice) return null;
-
-        return (
-          <View key={choiceValue} style={[
-            styles.rankingItem,
-            !isEnabled && styles.disabledOption
-          ]}>
-            <View style={styles.rankingNumber}>
-              <Text style={styles.rankingNumberText}>{index + 1}</Text>
-            </View>
-            <Text style={[styles.rankingText, !isEnabled && styles.disabledText]}>
-              {choice.text}
-            </Text>
-            <View style={styles.rankingControls}>
-              {index > 0 && isEnabled && (
-                <TouchableOpacity
-                  style={styles.rankingButton}
-                  onPress={() => moveItem(index, index - 1)}
-                >
-                  <Text style={styles.rankingButtonText}>▲</Text>
-                </TouchableOpacity>
-              )}
-              {index < currentOrder.length - 1 && isEnabled && (
-                <TouchableOpacity
-                  style={styles.rankingButton}
-                  onPress={() => moveItem(index, index + 1)}
-                >
-                  <Text style={styles.rankingButtonText}>▼</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function getKeyboardType(variant?: string) {
-  switch (variant) {
-    case 'email':
-      return 'email-address';
-    case 'number':
-    case 'range':
-      return 'numeric';
-    case 'tel':
-      return 'phone-pad';
-    case 'url':
-      return 'url';
-    default:
-      return 'default';
-  }
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -982,8 +732,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   ratingContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: 'column',
     marginTop: 8,
   },
   ratingItem: {
@@ -995,8 +744,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   ratingSelected: {
-    backgroundColor: '#2196f3',
-    borderColor: '#2196f3',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   ratingText: {
     fontSize: 16,
@@ -1006,23 +755,38 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   htmlContainer: {
-    padding: 8,
+    padding: 12,
     backgroundColor: '#f9f9f9',
     borderRadius: 4,
   },
   htmlText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#333',
+    lineHeight: 22,
   },
-  expressionContainer: {
-    padding: 8,
-    backgroundColor: '#e3f2fd',
-    borderRadius: 4,
+  htmlParagraph: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 12,
+    lineHeight: 22,
   },
-  expressionText: {
+  htmlHeading1: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#222',
+    marginVertical: 12,
+  },
+  htmlHeading2: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginVertical: 10,
+  },
+  htmlHeading3: {
     fontSize: 14,
-    color: '#1976d2',
-    fontStyle: 'italic',
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
   },
   unsupportedContainer: {
     padding: 8,
@@ -1066,57 +830,6 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
-  },
-  fileUploadContainer: {
-    borderWidth: 2,
-    borderColor: '#ddd',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    height: 250,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fileUploadContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fileUploadIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  fileUploadMainText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  fileUploadSubText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  geopointContainer: {
-    marginTop: 8,
-  },
-  locationButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 4,
-    padding: 12,
-    backgroundColor: '#f0f8ff',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  locationButtonText: {
-    fontSize: 16,
-    color: '#1976d2',
-  },
-  locationAccuracy: {
-    fontSize: 12,
-    color: '#666',
     textAlign: 'center',
   },
   dropdownButton: {
@@ -1278,7 +991,7 @@ const styles = StyleSheet.create({
   },
   // Additional styles for modal done button
   modalDoneButton: {
-    backgroundColor: '#2196f3',
+    backgroundColor: '#10B981', // Using primary color
     padding: 12,
     borderRadius: 6,
     marginTop: 16,
@@ -1289,6 +1002,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  
 });
 
 export default NativeSurveyRenderer;
