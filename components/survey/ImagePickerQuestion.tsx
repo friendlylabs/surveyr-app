@@ -1,13 +1,15 @@
-import { ResizeMode, Video } from 'expo-av';
-import React from 'react';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import React, { useState } from 'react';
 import {
-    Dimensions,
-    FlatList,
-    Image,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
 
 export interface ImageChoice {
@@ -32,6 +34,66 @@ export interface ImagePickerQuestionProps {
 const DEFAULT_IMAGE_SIZE = 120;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
+// Full-screen video player for modal
+const ModalVideoPlayer: React.FC<{
+  uri: string;
+  onClose: () => void;
+}> = ({ uri, onClose }) => {
+  const player = useVideoPlayer(uri, player => {
+    player.loop = true;
+    player.muted = false; // Allow audio in modal
+    player.play(); // Auto-play in modal for better UX
+  });
+
+  return (
+    <View style={styles.modalVideoContainer}>
+      <VideoView
+        style={styles.modalVideo}
+        player={player}
+        allowsFullscreen={true}
+        allowsPictureInPicture={true}
+        contentFit="contain"
+      />
+      <TouchableOpacity style={styles.modalCloseButton} onPress={onClose}>
+        <Text style={styles.modalCloseButtonText}>✕</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// Video item renderer component using expo-video
+const VideoItemRenderer: React.FC<{
+  uri: string;
+  height: number;
+  resizeMode: 'cover' | 'contain' | 'stretch';
+}> = ({ uri, height, resizeMode }) => {
+  const player = useVideoPlayer(uri, player => {
+    player.loop = true;
+    player.muted = true;
+    // Don't auto-play to save bandwidth and battery
+  });
+
+  // Map resize mode to valid VideoContentFit values
+  const getVideoContentFit = (mode: 'cover' | 'contain' | 'stretch') => {
+    switch (mode) {
+      case 'cover': return 'cover';
+      case 'contain': return 'contain';
+      case 'stretch': return 'fill'; // Use 'fill' instead of 'stretch'
+      default: return 'cover';
+    }
+  };
+
+  return (
+    <VideoView
+      style={[styles.mediaItem, { height }]}
+      player={player}
+      allowsFullscreen={false}
+      allowsPictureInPicture={false}
+      contentFit={getVideoContentFit(resizeMode)}
+    />
+  );
+};
+
 /**
  * ImagePickerQuestion component for image and video selection
  */
@@ -47,6 +109,10 @@ const ImagePickerQuestion: React.FC<ImagePickerQuestionProps> = ({
   imageHeight = DEFAULT_IMAGE_SIZE,
   multiSelect = false
 }) => {
+  // State for modal
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<ImageChoice | null>(null);
+
   // For multi-select mode, value is an array
   const selectedValues = multiSelect && value ? 
     (Array.isArray(value) ? value : [value]) : 
@@ -68,44 +134,54 @@ const ImagePickerQuestion: React.FC<ImagePickerQuestionProps> = ({
     }
   };
 
-  const getResizeMode = () => {
+  const handleLongPress = (item: ImageChoice) => {
+    setSelectedMedia(item);
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setSelectedMedia(null);
+  };
+
+  const getResizeMode = (): 'cover' | 'contain' | 'stretch' => {
     switch (imageFit) {
-      case 'cover': return ResizeMode.COVER;
-      case 'contain': return ResizeMode.CONTAIN;
-      case 'fill': return 'stretch' as any;
-      case 'scale-down': return ResizeMode.CONTAIN; // Closest match
-      default: return ResizeMode.COVER;
+      case 'cover': return 'cover';
+      case 'contain': return 'contain';
+      case 'fill': return 'stretch';
+      case 'scale-down': return 'contain'; // Closest match
+      default: return 'cover';
     }
   };
 
-  const renderImageItem = ({ item }: { item: ImageChoice }) => {
+  const renderImageItem = ({ item }: { item: ImageChoice }, itemWidth?: number) => {
     const isSelected = selectedValues.includes(item.value);
+    const actualWidth = itemWidth || imageWidth;
     
     return (
       <TouchableOpacity 
         style={[
           styles.itemContainer, 
-          { width: imageWidth }, 
+          { width: actualWidth }, 
           isSelected && styles.selectedItem,
           !isEnabled && styles.disabledItem
         ]}
         onPress={() => handleSelect(item.value)}
+        onLongPress={() => handleLongPress(item)}
         disabled={!isEnabled}
+        delayLongPress={500}
       >
         {contentMode === 'video' ? (
-          <Video
-            style={[styles.mediaItem, { height: imageHeight }]}
-            source={{ uri: item.imageLink }}
-            useNativeControls={false}
+          <VideoItemRenderer 
+            uri={item.imageLink}
+            height={imageHeight}
             resizeMode={getResizeMode()}
-            isLooping
-            shouldPlay={false}
           />
         ) : (
           <Image
             style={[styles.mediaItem, { height: imageHeight }]}
             source={{ uri: item.imageLink }}
-            resizeMode={getResizeMode() as any}
+            resizeMode={getResizeMode()}
           />
         )}
 
@@ -129,20 +205,64 @@ const ImagePickerQuestion: React.FC<ImagePickerQuestionProps> = ({
     );
   };
 
-  // Calculate numColumns based on screen width and image width
-  const numColumns = Math.max(1, Math.floor((SCREEN_WIDTH - 32) / (imageWidth + 12)));
+  // Fixed 3 columns layout
+  const numColumns = 3;
+  const containerPadding = 32; // Total horizontal padding (16 on each side)
+  const itemSpacing = 12; // Space between items
+  const totalSpacing = itemSpacing * (numColumns - 1); // Space between items in a row
+  const availableWidth = SCREEN_WIDTH - containerPadding - totalSpacing;
+  const calculatedItemWidth = Math.floor(availableWidth / numColumns);
 
   return (
     <View style={styles.container}>
       <FlatList
         data={choices}
-        renderItem={renderImageItem}
+        renderItem={({ item }) => renderImageItem({ item }, calculatedItemWidth)}
         keyExtractor={(item) => item.value}
         numColumns={numColumns}
-        columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+        columnWrapperStyle={styles.columnWrapper}
         scrollEnabled={false} // Let parent ScrollView handle scrolling
         style={styles.list}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
       />
+      
+      {/* Modal for full-screen media viewing */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <TouchableWithoutFeedback onPress={closeModal}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.modalContent}>
+                {selectedMedia && (
+                  <>
+                    {contentMode === 'video' ? (
+                      <ModalVideoPlayer uri={selectedMedia.imageLink} onClose={closeModal} />
+                    ) : (
+                      <View style={styles.modalImageContainer}>
+                        <Image
+                          style={styles.modalImage}
+                          source={{ uri: selectedMedia.imageLink }}
+                          resizeMode="contain"
+                        />
+                        <TouchableOpacity style={styles.modalCloseButton} onPress={closeModal}>
+                          <Text style={styles.modalCloseButtonText}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    {selectedMedia.text && (
+                      <Text style={styles.modalTitle}>{selectedMedia.text}</Text>
+                    )}
+                  </>
+                )}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 };
@@ -151,16 +271,16 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     marginTop: 8,
+    paddingHorizontal: 16,
   },
   list: {
     width: '100%',
   },
   columnWrapper: {
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
   },
   itemContainer: {
     marginBottom: 12,
-    marginRight: 12,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#f5f5f5',
@@ -205,7 +325,67 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: 'bold',
-  }
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    maxHeight: '80%',
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modalImageContainer: {
+    position: 'relative',
+    backgroundColor: '#000',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modalImage: {
+    width: '100%',
+    height: 400,
+  },
+  modalVideoContainer: {
+    position: 'relative',
+    backgroundColor: '#000',
+    borderRadius: 12,
+    overflow: 'hidden',
+    height: 300,
+  },
+  modalVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  modalCloseButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  modalTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+  },
 });
 
 export default ImagePickerQuestion;
