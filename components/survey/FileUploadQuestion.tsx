@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
   StyleSheet,
@@ -14,7 +15,8 @@ export interface FileUploadQuestionProps {
   questionName: string;
   allowedTypes?: string[];
   maxFileSize?: number;
-  onFileUpload?: (questionName: string, allowedTypes?: string[], maxFileSize?: number) => Promise<any>;
+  allowMultiple?: boolean;
+  onFileUpload?: (questionName: string, allowedTypes?: string[], maxFileSize?: number, allowMultiple?: boolean) => Promise<any>;
 }
 
 /**
@@ -27,14 +29,23 @@ const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
   questionName,
   allowedTypes,
   maxFileSize,
+  allowMultiple = false,
   onFileUpload
 }) => {
   const handleFileUpload = async () => {
     if (!isEnabled || !onFileUpload) return;
     try {
-      const result = await onFileUpload(questionName, allowedTypes, maxFileSize);
+      const result = await onFileUpload(questionName, allowedTypes, maxFileSize, allowMultiple);
       if (result) {
-        onValueChange(result);
+        if (allowMultiple) {
+          // For multiple files, append to existing array or create new array
+          const existingFiles = Array.isArray(value) ? value : [];
+          const newFiles = Array.isArray(result) ? result : [result];
+          onValueChange([...existingFiles, ...newFiles]);
+        } else {
+          // For single file, replace existing value
+          onValueChange(result);
+        }
       }
     } catch (error) {
       console.error('File upload failed:', error);
@@ -48,10 +59,26 @@ const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
       disabled={!isEnabled}
     >
       <View style={styles.fileUploadContent}>
-        <Text style={[styles.fileUploadIcon, !isEnabled && styles.disabledText]}>📁</Text>
+        <Ionicons 
+          name="document-attach-outline" 
+          size={48} 
+          color={!isEnabled ? '#999' : '#666'} 
+          style={styles.fileUploadIcon}
+        />
         <Text style={[styles.fileUploadMainText, !isEnabled && styles.disabledText]}>
-          {value ? `Selected: ${value.fileName || 'File'}` : 'Upload a file'}
+          {value ? 
+            (allowMultiple && Array.isArray(value) ? 
+              `Selected: ${value.length} file${value.length !== 1 ? 's' : ''}` :
+              `Selected: ${Array.isArray(value) ? value[0]?.fileName || 'File' : value.fileName || 'File'}`
+            ) : 
+            `Upload ${allowMultiple ? 'files' : 'a file'}`
+          }
         </Text>
+        {allowMultiple && Array.isArray(value) && value.length > 0 && (
+          <Text style={[styles.fileUploadSubText, !isEnabled && styles.disabledText]}>
+            {value.map((file, index) => file.fileName || `File ${index + 1}`).join(', ')}
+          </Text>
+        )}
         {allowedTypes && allowedTypes.length > 0 && (
           <Text style={[styles.fileUploadSubText, !isEnabled && styles.disabledText]}>
             Allowed types: {allowedTypes.join(', ')}
@@ -82,7 +109,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   fileUploadIcon: {
-    fontSize: 48,
     marginBottom: 16,
   },
   fileUploadMainText: {
