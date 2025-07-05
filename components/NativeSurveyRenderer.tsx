@@ -26,13 +26,16 @@ import {
   GeopointQuestion,
   HtmlContent,
   ImagePickerQuestion,
+  ImageQuestion,
   MatrixDropdownQuestion,
   MatrixQuestion,
+  MicrophoneQuestion,
   MultipletextQuestion,
   RadioGroupQuestion,
   RangeSlider,
   RankingQuestion,
   RatingQuestion,
+  SignaturePadQuestion,
   TagboxQuestion,
   TextQuestion
 } from './survey';
@@ -59,6 +62,7 @@ export function NativeSurveyRenderer({
   const [surveyState, setSurveyState] = useState<SurveyState | null>(null);
   const [loading, setLoading] = useState(true);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   useEffect(() => {
     try {
@@ -208,7 +212,7 @@ export function NativeSurveyRenderer({
         <Text style={styles.pageTitle}>{currentPage.title}</Text>
       )}
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} scrollEnabled={scrollEnabled}>
         {currentPage.elements.map((question, index) => (
           <QuestionRenderer
             key={question.id}
@@ -223,6 +227,7 @@ export function NativeSurveyRenderer({
             onFileUpload={onFileUpload}
             onLocationRequest={onLocationRequest}
             validationError={validationErrors[question.name]}
+            onScrollEnable={setScrollEnabled}
           />
         ))}
       </ScrollView>
@@ -269,6 +274,7 @@ interface QuestionRendererProps {
   onFileUpload?: (questionName: string, allowedTypes?: string[], maxFileSize?: number) => Promise<any>;
   onLocationRequest?: (questionName: string) => Promise<any>;
   validationError?: string;
+  onScrollEnable?: (enabled: boolean) => void;
 }
 
 function QuestionRenderer({
@@ -282,7 +288,8 @@ function QuestionRenderer({
   questionNumber,
   onFileUpload,
   onLocationRequest,
-  validationError
+  validationError,
+  onScrollEnable
 }: QuestionRendererProps) {
   if (!isVisible) return null;
 
@@ -582,6 +589,19 @@ function QuestionRenderer({
           />
         );
         
+      case 'image':
+        return (
+          <ImageQuestion
+            imageLink={question.imageLink || ''}
+            contentMode={(question.contentMode as 'image' | 'video' | 'youtube') || 'image'}
+            imageFit={(question.imageFit as 'cover' | 'contain' | 'fill' | 'scale-down') || 'cover'}
+            imageHeight={question.imageHeight}
+            imageWidth={question.imageWidth}
+            title={question.title}
+            description={question.description}
+          />
+        );
+        
       case 'multipletext':
         // Prepare items for the multipletext component
         const textItems = question.elements?.map(element => ({
@@ -601,6 +621,34 @@ function QuestionRenderer({
           />
         );
 
+      case 'signaturepad':
+        return (
+          <SignaturePadQuestion
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            placeholder={question.placeholder || "Please sign here"}
+            backgroundColor={question.backgroundColor}
+            penColor={question.penColor}
+            penSize={question.penSize}
+            minWidth={question.minWidth}
+            maxWidth={question.maxWidth}
+            trimWhitespace={question.trimWhitespace}
+            onScrollEnable={onScrollEnable}
+          />
+        );
+
+      case 'microphone':
+        return (
+          <MicrophoneQuestion
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            placeholder={question.placeholder || "Tap to record audio"}
+            maxDuration={question.maxDuration}
+          />
+        );
+
       default:
         return (
           <View style={styles.unsupportedContainer}>
@@ -614,13 +662,18 @@ function QuestionRenderer({
 
   return (
     <View style={styles.questionContainer}>
-      <Text style={[styles.questionTitle, isRequired && styles.requiredTitle]}>
-        {displayTitle}
-        {isRequired && <Text style={styles.requiredAsterisk}> *</Text>}
-      </Text>
-      
-      {question.description && (
-        <Text style={styles.questionDescription}>{question.description}</Text>
+      {/* Don't show title/description for image and html types as they are descriptive content */}
+      {question.type !== 'image' && question.type !== 'html' && (
+        <>
+          <Text style={[styles.questionTitle, isRequired && styles.requiredTitle]}>
+            {displayTitle}
+            {isRequired && <Text style={styles.requiredAsterisk}> *</Text>}
+          </Text>
+          
+          {question.description && (
+            <Text style={styles.questionDescription}>{question.description}</Text>
+          )}
+        </>
       )}
       
       {renderQuestion()}
@@ -683,7 +736,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   questionContainer: {
-    marginBottom: 12,
+    marginBottom: 18,
   },
   questionTitle: {
     fontSize: 16,
