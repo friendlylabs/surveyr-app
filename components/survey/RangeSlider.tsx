@@ -1,13 +1,6 @@
-import React, { useRef, useState } from 'react';
-import {
-    GestureResponderEvent,
-    PanResponder,
-    PanResponderGestureState,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from 'react-native';
+import Slider from '@react-native-community/slider';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 // Types
 export interface RangeSliderProps {
@@ -22,7 +15,7 @@ export interface RangeSliderProps {
 }
 
 /**
- * RangeSlider component for range/slider inputs
+ * RangeSlider component for range/slider inputs using @react-native-community/slider
  */
 const RangeSlider: React.FC<RangeSliderProps> = ({
   value,
@@ -39,106 +32,32 @@ const RangeSlider: React.FC<RangeSliderProps> = ({
   const maxValue = maximumValue !== undefined ? maximumValue : max;
   const [localValue, setLocalValue] = useState(value || minValue);
   
-  // Reference to track container for layout measurements
-  const trackRef = useRef<View>(null);
-  const [trackLayout, setTrackLayout] = useState({ width: 0, x: 0 });
-  
-  // Calculate the position percentage for the slider thumb
-  const percentage = ((localValue - minValue) / (maxValue - minValue)) * 100;
-  
-  // Update local value and parent value
+  // Update local value when prop changes
+  useEffect(() => {
+    setLocalValue(value || minValue);
+  }, [value, minValue]);
+
+  // Handle value changes
   const handleValueChange = (newValue: number) => {
-    // Snap to step increments
-    const snappedValue = Math.round((newValue - minValue) / step) * step + minValue;
-    // Ensure the value is within bounds
-    const boundedValue = Math.max(minValue, Math.min(maxValue, snappedValue));
-    setLocalValue(boundedValue);
-    onValueChange(boundedValue);
+    setLocalValue(newValue);
+    onValueChange(newValue);
   };
-
-  // Handle direct tap on the slider track
-  const handleTrackPress = (event: GestureResponderEvent) => {
-    if (!isEnabled || trackLayout.width === 0) return;
-    
-    // Calculate tap position relative to the track
-    // Using measure to get absolute positioning
-    trackRef.current?.measure((x, y, width, height, pageX, pageY) => {
-      const tapX = event.nativeEvent.pageX - pageX;
-      const percentage = Math.max(0, Math.min(1, tapX / width));
-      const newValue = minValue + percentage * (maxValue - minValue);
-      handleValueChange(newValue);
-    });
-  };
-
-  // State to store the starting thumb position for dragging
-  const [thumbStartX, setThumbStartX] = useState(0);
-
-  // For handling thumb dragging
-  const handleThumbMove = (event: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-    if (!isEnabled || trackLayout.width === 0) return;
-    
-    // Calculate new position based on drag distance
-    const newX = Math.max(0, Math.min(trackLayout.width, thumbStartX + gestureState.dx));
-    const newPercentage = newX / trackLayout.width;
-    const newValue = minValue + newPercentage * (maxValue - minValue);
-    handleValueChange(newValue);
-  };
-
-  // Create pan responder for the thumb
-  const thumbPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => isEnabled,
-      onMoveShouldSetPanResponder: () => isEnabled,
-      onPanResponderGrant: () => {
-        // Store the current thumb position when starting to drag
-        setThumbStartX(percentage * trackLayout.width / 100);
-      },
-      onPanResponderMove: handleThumbMove,
-      onPanResponderRelease: () => {}
-    })
-  ).current;
 
   return (
     <View style={styles.sliderContainer}>
-      {/* Track background with tap handling */}
-      <View 
-        ref={trackRef}
-        style={styles.sliderTrackContainer}
-        onLayout={(event) => {
-          const { width, x } = event.nativeEvent.layout;
-          setTrackLayout({ width, x });
-        }}
-      >
-        {/* Touchable track area */}
-        <TouchableOpacity
-          activeOpacity={isEnabled ? 0.8 : 1}
-          disabled={!isEnabled}
-          style={[
-            styles.sliderTrack,
-            !isEnabled && styles.disabledSliderTrack
-          ]}
-          onPress={handleTrackPress}
-        >
-          {/* Colored fill area */}
-          <View 
-            style={[
-              styles.sliderFill, 
-              { width: `${percentage}%` },
-              !isEnabled && styles.disabledSliderFill
-            ]} 
-          />
-        </TouchableOpacity>
-
-        {/* Draggable thumb */}
-        <View 
-          style={[
-            styles.sliderThumb,
-            { left: `${percentage}%` },
-            !isEnabled && styles.disabledSliderThumb
-          ]} 
-          {...(isEnabled ? thumbPanResponder.panHandlers : {})}
-        />
-      </View>
+      {/* Slider component */}
+      <Slider
+        style={styles.slider}
+        minimumValue={minValue}
+        maximumValue={maxValue}
+        step={step}
+        value={localValue}
+        onValueChange={handleValueChange}
+        disabled={!isEnabled}
+        minimumTrackTintColor={isEnabled ? "#10B981" : "#9CA3AF"}
+        maximumTrackTintColor="#E5E7EB"
+        thumbTintColor={isEnabled ? "#10B981" : "#9CA3AF"}
+      />
       
       {/* Value labels */}
       <View style={styles.sliderLabels}>
@@ -157,43 +76,9 @@ const styles = StyleSheet.create({
     marginVertical: 10,
     paddingHorizontal: 10,
   },
-  sliderTrackContainer: {
-    position: 'relative',
-    width: '100%', 
-    height: 40, // Height including the touch area
-    justifyContent: 'center',
-  },
-  sliderTrack: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
+  slider: {
     width: '100%',
-  },
-  sliderFill: {
-    height: 6,
-    backgroundColor: '#10B981',
-    borderRadius: 3,
-    position: 'absolute',
-    left: 0,
-    top: 0,
-  },
-  sliderThumb: {
-    width: 28,
-    height: 28,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#10B981',
-    position: 'absolute',
-    top: '50%',
-    marginTop: -14,
-    marginLeft: -14,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1,
-    zIndex: 2, // Ensure thumb is above other elements
+    height: 40,
   },
   sliderLabels: {
     flexDirection: 'row',
@@ -212,18 +97,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#10B981',
-  },
-  disabledSliderTrack: {
-    opacity: 0.5,
-  },
-  disabledSliderFill: {
-    backgroundColor: '#9CA3AF',
-  },
-  disabledSliderThumb: {
-    borderColor: '#9CA3AF',
-  },
-  disabledButton: {
-    opacity: 0.5,
   },
 });
 
