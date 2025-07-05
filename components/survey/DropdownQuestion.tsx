@@ -4,7 +4,7 @@ import { Choice } from './types';
 
 interface DropdownQuestionProps {
   choices: Choice[];
-  value: string;
+  value: string | number | null | undefined;
   onValueChange: (value: string) => void;
   isEnabled: boolean;
   placeholder: string;
@@ -19,7 +19,9 @@ export function DropdownQuestion({
 }: DropdownQuestionProps) {
   const [modalVisible, setModalVisible] = useState(false);
 
-  const selectedChoice = choices.find(choice => choice.value === value);
+  // Handle various value types by converting to string for comparison
+  const stringValue = value !== null && value !== undefined ? String(value) : '';
+  const selectedChoice = choices.find(choice => choice.value === stringValue);
 
   return (
     <View>
