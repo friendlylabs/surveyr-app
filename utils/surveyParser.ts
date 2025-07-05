@@ -508,13 +508,16 @@ function parseChoices(choices: any[]): ParsedChoice[] {
   if (!choices) return [];
   
   return choices.map(choice => {
-    if (typeof choice === 'string') {
-      return { value: choice, text: choice };
+    // Handle primitive types (string, number, etc.)
+    if (typeof choice !== 'object' || choice === null) {
+      const stringValue = String(choice);
+      return { value: stringValue, text: stringValue };
     }
     
+    // Handle object with value/text properties
     return {
-      value: choice.value || choice.name || choice.text,
-      text: choice.text || choice.title || choice.value || choice.name,
+      value: String(choice.value || choice.name || choice.text || ''),
+      text: String(choice.text || choice.title || choice.value || choice.name || ''),
       enableIf: choice.enableIf,
       visibleIf: choice.visibleIf,
       imageLink: choice.imageLink // For imagepicker questions
