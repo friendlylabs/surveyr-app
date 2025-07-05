@@ -26,6 +26,9 @@ import {
   GeopointQuestion,
   HtmlContent,
   ImagePickerQuestion,
+  MatrixDropdownQuestion,
+  MatrixQuestion,
+  MultipletextQuestion,
   RadioGroupQuestion,
   RangeSlider,
   RankingQuestion,
@@ -460,6 +463,45 @@ function QuestionRenderer({
             value={value}
           />
         );
+        
+      case 'matrix':
+        return (
+          <MatrixQuestion
+            rows={question.rows || []}
+            columns={question.choices || []}
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+          />
+        );
+        
+      case 'matrixdropdown':
+        return (
+          <MatrixDropdownQuestion
+            rows={question.rows || []}
+            columns={question.columns || []}
+            choices={question.choices}
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            dynamic={false}
+          />
+        );
+        
+      case 'matrixdynamic':
+        return (
+          <MatrixDropdownQuestion
+            rows={question.rows || []}
+            columns={question.columns || []}
+            choices={question.choices}
+            value={value}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
+            dynamic={true}
+            minRowCount={question.minRowCount || 0}
+            maxRowCount={question.maxRowCount || 10}
+          />
+        );
 
       case 'file':
         return (
@@ -537,6 +579,25 @@ function QuestionRenderer({
             imageWidth={question.imageWidth}
             imageHeight={question.imageHeight}
             multiSelect={question.multiSelect}
+          />
+        );
+        
+      case 'multipletext':
+        // Prepare items for the multipletext component
+        const textItems = question.elements?.map(element => ({
+          name: element.name.split('.').pop() || element.name,
+          title: element.title,
+          placeholder: element.placeholder,
+          inputType: element.variant,
+          required: element.isRequired
+        })) || [];
+        
+        return (
+          <MultipletextQuestion
+            items={textItems}
+            value={value || {}}
+            onValueChange={onValueChange}
+            isEnabled={isEnabled}
           />
         );
 
