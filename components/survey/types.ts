@@ -3,4 +3,7 @@
 export interface Choice {
   value: string;
   text: string;
+  imageLink?: string;
+  enableIf?: string;
+  visibleIf?: string;
 }
