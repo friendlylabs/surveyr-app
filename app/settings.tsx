@@ -3,15 +3,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Image,
-    Linking,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  Linking,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import TopBar from '../components/TopBar';
@@ -145,8 +145,7 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Divider */}
-          <View style={[localStyles.divider, { backgroundColor: colors.border }]} />
+          {/* Divider: <View style={[localStyles.divider, { backgroundColor: colors.border }]} /> */}
 
           {/* Menu Items */}
           <View style={localStyles.menuSection}>
@@ -300,7 +299,10 @@ const localStyles = StyleSheet.create({
   profileSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 10,
   },
   avatarContainer: {
     marginRight: 16,
@@ -308,7 +310,7 @@ const localStyles = StyleSheet.create({
   avatar: {
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: 8,
     backgroundColor: '#f3f4f6',
   },
   userInfo: {
