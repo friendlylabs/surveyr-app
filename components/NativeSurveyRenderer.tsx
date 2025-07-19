@@ -1,43 +1,43 @@
-// Example React Native component using the SurveyJS Parser
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import {
-    createSurveyState,
-    parseSurveyJS,
-    validateSurveyData,
-    type ParsedQuestion,
-    type SurveyState
+  createSurveyState,
+  parseSurveyJS,
+  validateSurveyData,
+  type ParsedQuestion,
+  type SurveyState
 } from '../utils/surveyParser';
 import {
-    BooleanQuestion,
-    CheckboxQuestion,
-    ColorPicker,
-    DatePicker,
-    DropdownQuestion,
-    ExpressionQuestion,
-    FileUploadQuestion,
-    GeopointQuestion,
-    HtmlContent,
-    ImagePickerQuestion,
-    ImageQuestion,
-    MatrixDropdownQuestion,
-    MatrixQuestion,
-    MicrophoneQuestion,
-    MultipletextQuestion,
-    RadioGroupQuestion,
-    RangeSlider,
-    RankingQuestion,
-    RatingQuestion,
-    SignaturePadQuestion,
-    TagboxQuestion,
-    TextQuestion
+  BooleanQuestion,
+  CheckboxQuestion,
+  ColorPicker,
+  DatePicker,
+  DropdownQuestion,
+  ExpressionQuestion,
+  FileUploadQuestion,
+  GeopointQuestion,
+  HtmlContent,
+  ImagePickerQuestion,
+  ImageQuestion,
+  MatrixDropdownQuestion,
+  MatrixQuestion,
+  MicrophoneQuestion,
+  MultipletextQuestion,
+  PanelQuestion,
+  RadioGroupQuestion,
+  RangeSlider,
+  RankingQuestion,
+  RatingQuestion,
+  SignaturePadQuestion,
+  TagboxQuestion,
+  TextQuestion
 } from './survey';
 
 interface NativeSurveyRendererProps {
@@ -649,6 +649,90 @@ function QuestionRenderer({
             isEnabled={isEnabled}
             placeholder={question.placeholder || "Tap to record audio"}
             maxDuration={question.maxDuration}
+          />
+        );
+
+      case 'panel':
+        return (
+          <PanelQuestion
+            question={question}
+            value={value || {}}
+            onValueChange={onValueChange}
+            surveyData={surveyData}
+            isVisible={isVisible}
+            isEnabled={isEnabled}
+            isRequired={isRequired}
+            isDynamic={false}
+            renderQuestion={(nestedQuestion, parentName, index) => (
+              <QuestionRenderer
+                question={nestedQuestion}
+                value={surveyData[nestedQuestion.name]}
+                onValueChange={(newValue) => {
+                  // Update the nested question value in survey data
+                  const updatedData = { ...surveyData };
+                  updatedData[nestedQuestion.name] = newValue;
+                  // Also update the panel value
+                  const updatedPanelValue = { ...value };
+                  updatedPanelValue[nestedQuestion.name] = newValue;
+                  onValueChange(updatedPanelValue);
+                }}
+                surveyData={surveyData}
+                isVisible={true}
+                isEnabled={isEnabled}
+                isRequired={nestedQuestion.isRequired || false}
+                onFileUpload={onFileUpload}
+                onLocationRequest={onLocationRequest}
+                onScrollEnable={onScrollEnable}
+              />
+            )}
+          />
+        );
+
+      case 'paneldynamic':
+        return (
+          <PanelQuestion
+            question={question}
+            value={value || []}
+            onValueChange={onValueChange}
+            surveyData={surveyData}
+            isVisible={isVisible}
+            isEnabled={isEnabled}
+            isRequired={isRequired}
+            isDynamic={true}
+            minPanelCount={question.minPanelCount || 1}
+            maxPanelCount={question.maxPanelCount || 10}
+            renderQuestion={(nestedQuestion, parentName, index) => {
+              // For dynamic panels, handle array-based value structure
+              const panelIndex = index || 0;
+              const panelData = Array.isArray(value) ? value[panelIndex] || {} : {};
+              const nestedValue = panelData[nestedQuestion.name];
+              
+              return (
+                <QuestionRenderer
+                  question={nestedQuestion}
+                  value={nestedValue}
+                  onValueChange={(newValue) => {
+                    // Update the nested question value in the specific panel instance
+                    const updatedPanelData = Array.isArray(value) ? [...value] : [];
+                    if (!updatedPanelData[panelIndex]) {
+                      updatedPanelData[panelIndex] = {};
+                    }
+                    updatedPanelData[panelIndex] = {
+                      ...updatedPanelData[panelIndex],
+                      [nestedQuestion.name]: newValue
+                    };
+                    onValueChange(updatedPanelData);
+                  }}
+                  surveyData={surveyData}
+                  isVisible={true}
+                  isEnabled={isEnabled}
+                  isRequired={nestedQuestion.isRequired || false}
+                  onFileUpload={onFileUpload}
+                  onLocationRequest={onLocationRequest}
+                  onScrollEnable={onScrollEnable}
+                />
+              );
+            }}
           />
         );
 

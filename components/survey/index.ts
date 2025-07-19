@@ -14,6 +14,7 @@ export { default as MatrixDropdownQuestion } from './MatrixDropdownQuestion';
 export { default as MatrixQuestion } from './MatrixQuestion';
 export { default as MicrophoneQuestion } from './MicrophoneQuestion';
 export { default as MultipletextQuestion } from './MultipletextQuestion';
+export { default as PanelQuestion } from './PanelQuestion';
 export { default as RadioGroupQuestion } from './RadioGroupQuestion';
 export { default as RangeSlider } from './RangeSlider';
 export { default as RankingQuestion } from './RankingQuestion';

@@ -111,6 +111,8 @@ export interface ParsedQuestion {
   
   // For panels
   elements?: ParsedQuestion[];
+  minPanelCount?: number;
+  maxPanelCount?: number;
   
   // For image picker
   imageHeight?: number;
@@ -619,9 +621,8 @@ function parseQuestion(question: any, parentId?: string): ParsedQuestion {
     case 'paneldynamic':
       parsed.elements = question.elements?.map((el: any) => parseQuestion(el, questionId));
       if (question.type === 'paneldynamic') {
-        parsed.rowCount = question.panelCount;
-        parsed.minRowCount = question.minPanelCount;
-        parsed.maxRowCount = question.maxPanelCount;
+        parsed.minPanelCount = question.minPanelCount || 1;
+        parsed.maxPanelCount = question.maxPanelCount || 10;
       }
       break;
   }
