@@ -538,10 +538,12 @@ function QuestionRenderer({
         return (
           <DropdownQuestion
             choices={question.choices || []}
+            choicesByUrl={question.choicesByUrl}
             value={value}
             onValueChange={onValueChange}
             isEnabled={isEnabled}
             placeholder="Select an option..."
+            surveyData={surveyData}
           />
         );
 

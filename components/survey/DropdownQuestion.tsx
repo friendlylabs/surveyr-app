@@ -1,23 +1,98 @@
-import React, { useState } from 'react';
-import { FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getChoicesFromZoneUrl } from '../../utils/surveyParser';
 import { Choice } from './types';
 
 interface DropdownQuestionProps {
   choices: Choice[];
+  choicesByUrl?: {
+    url: string;
+    valueName?: string;
+    titleName?: string;
+  };
   value: string | number | null | undefined;
   onValueChange: (value: string) => void;
   isEnabled: boolean;
   placeholder: string;
+  surveyData?: Record<string, any>;
 }
 
 export function DropdownQuestion({
-  choices,
+  choices: initialChoices,
+  choicesByUrl,
   value,
   onValueChange,
   isEnabled,
-  placeholder
+  placeholder,
+  surveyData = {}
 }: DropdownQuestionProps) {
   const [modalVisible, setModalVisible] = useState(false);
+  const [choices, setChoices] = useState<Choice[]>(initialChoices || []);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Update choices when initial choices change
+    setChoices(initialChoices || []);
+  }, [initialChoices]);
+
+  // Listen for changes in any dependency fields referenced in the URL or params
+  // Compute a stable dependency key for referenced fields
+  useEffect(() => {
+    if (!choicesByUrl?.url) {
+      setChoices(initialChoices || []);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoading(true);
+    setError(null);
+
+    // Find all referenced keys in the URL
+    const getDependencyKeys = () => {
+      const keys = new Set<string>();
+      const url = choicesByUrl.url;
+      const matches = url.matchAll(/\{([^}]+)\}/g);
+      for (const m of matches) {
+        if (m[1]) keys.add(m[1]);
+      }
+      return Array.from(keys).sort(); // sort for stable order
+    };
+
+    const dependencyKeys = getDependencyKeys();
+    const dependencyValues = dependencyKeys.map(k => surveyData[k]);
+
+    const loadChoicesFromUrl = async () => {
+      try {
+        const dynamicChoices = await getChoicesFromZoneUrl(choicesByUrl, surveyData);
+        if (!isMounted) return;
+        if (dynamicChoices && dynamicChoices.length > 0) {
+          setChoices(dynamicChoices);
+        } else if (dynamicChoices && dynamicChoices.length === 0) {
+          setChoices([]);
+          setError('No options available');
+        } else {
+          setChoices([]);
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        console.error('Error loading choices from URL:', err);
+        setError('Failed to load options');
+        setChoices([]);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadChoicesFromUrl();
+    return () => { isMounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choicesByUrl, initialChoices, JSON.stringify((() => {
+    // Stable dependency: referenced keys and their values
+    if (!choicesByUrl?.url) return [];
+    const keys = Array.from((choicesByUrl.url.matchAll(/\{([^}]+)\}/g)), m => m[1]).sort();
+    return keys.map(k => [k, surveyData[k]]);
+  })())]);
 
   // Handle various value types by converting to string for comparison
   const stringValue = value !== null && value !== undefined ? String(value) : '';
@@ -53,32 +128,42 @@ export function DropdownQuestion({
                 <Text style={styles.modalCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={choices}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.dropdownOption,
-                    value === item.value && styles.dropdownOptionSelected
-                  ]}
-                  onPress={() => {
-                    onValueChange(item.value);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={[
-                    styles.dropdownOptionText,
-                    value === item.value && styles.dropdownOptionTextSelected
-                  ]}>
-                    {item.text}
-                  </Text>
-                  {value === item.value && (
-                    <Text style={styles.dropdownCheckmark}>✓</Text>
-                  )}
-                </TouchableOpacity>
-              )}
-            />
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#10B981" />
+              </View>
+            ) : error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={choices}
+                keyExtractor={(item) => item.value}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.dropdownOption,
+                      value === item.value && styles.dropdownOptionSelected
+                    ]}
+                    onPress={() => {
+                      onValueChange(item.value);
+                      setModalVisible(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.dropdownOptionText,
+                      value === item.value && styles.dropdownOptionTextSelected
+                    ]}>
+                      {item.text}
+                    </Text>
+                    {value === item.value && (
+                      <Text style={styles.dropdownCheckmark}>✓</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -125,6 +210,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 8,
     overflow: 'hidden',
+    maxHeight: '90%', // was 100%, now 90% to avoid overflow
   },
   modalHeader: {
     padding: 16,
@@ -165,6 +251,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#10B981',
     marginLeft: 8,
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  errorContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#e53935',
+    fontSize: 16,
   },
 });
 
