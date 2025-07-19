@@ -1,5 +1,13 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { PanGestureHandler } from 'react-native-gesture-handler';
+import Animated, {
+  useAnimatedGestureHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  runOnJS,
+} from 'react-native-reanimated';
 import { Choice } from './types';
 
 interface RankingQuestionProps {
@@ -8,6 +16,83 @@ interface RankingQuestionProps {
   onValueChange: (value: string[]) => void;
   isEnabled: boolean;
 }
+
+const ITEM_HEIGHT = 60;
+
+interface DraggableItemProps {
+  choice: Choice;
+  index: number;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+  isEnabled: boolean;
+  totalItems: number;
+}
+
+const DraggableItem: React.FC<DraggableItemProps> = ({
+  choice,
+  index,
+  onReorder,
+  isEnabled,
+  totalItems,
+}) => {
+  const translateY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const zIndex = useSharedValue(0);
+
+  const gestureHandler = useAnimatedGestureHandler({
+    onStart: () => {
+      if (!isEnabled) return;
+      scale.value = withSpring(1.05);
+      zIndex.value = 1000;
+    },
+    onActive: (event) => {
+      if (!isEnabled) return;
+      translateY.value = event.translationY;
+    },
+    onEnd: (event) => {
+      if (!isEnabled) return;
+      scale.value = withSpring(1);
+      zIndex.value = 0;
+      
+      const moveY = event.translationY;
+      const moveDistance = Math.round(moveY / ITEM_HEIGHT);
+      
+      if (moveDistance !== 0) {
+        const newIndex = Math.max(0, Math.min(totalItems - 1, index + moveDistance));
+        if (newIndex !== index) {
+          runOnJS(onReorder)(index, newIndex);
+        }
+      }
+      
+      translateY.value = withSpring(0);
+    },
+  });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateY: translateY.value },
+        { scale: scale.value },
+      ],
+      zIndex: zIndex.value,
+    };
+  });
+
+  return (
+    <PanGestureHandler onGestureEvent={gestureHandler} enabled={isEnabled}>
+      <Animated.View style={[styles.rankingItem, animatedStyle, !isEnabled && styles.disabledOption]}>
+        <View style={styles.rankingNumber}>
+          <Text style={styles.rankingNumberText}>{index + 1}</Text>
+        </View>
+        <Text style={[styles.rankingText, !isEnabled && styles.disabledText]}>
+          {choice.text}
+        </Text>
+        <View style={styles.dragHandle}>
+          <Text style={styles.dragHandleText}>⋮⋮</Text>
+        </View>
+      </Animated.View>
+    </PanGestureHandler>
+  );
+};
 
 export function RankingQuestion({
   choices,
@@ -27,7 +112,7 @@ export function RankingQuestion({
 
   const currentOrder = orderedValues.length > 0 ? orderedValues : choices.map(choice => choice.value);
 
-  const moveItem = (fromIndex: number, toIndex: number) => {
+  const reorderItems = (fromIndex: number, toIndex: number) => {
     if (!isEnabled) return;
     
     const newOrder = [...currentOrder];
@@ -43,44 +128,25 @@ export function RankingQuestion({
   return (
     <View style={styles.rankingContainer}>
       <Text style={styles.rankingInstructions}>
-        Drag items to reorder them by preference (most preferred at top)
+        {isEnabled ? 'Drag items to reorder them by preference (most preferred at top)' : 'Items ranked by preference'}
       </Text>
-      {currentOrder.map((choiceValue, index) => {
-        const choice = getChoiceByValue(choiceValue);
-        if (!choice) return null;
+      <View style={styles.itemsContainer}>
+        {currentOrder.map((choiceValue, index) => {
+          const choice = getChoiceByValue(choiceValue);
+          if (!choice) return null;
 
-        return (
-          <View key={choiceValue} style={[
-            styles.rankingItem,
-            !isEnabled && styles.disabledOption
-          ]}>
-            <View style={styles.rankingNumber}>
-              <Text style={styles.rankingNumberText}>{index + 1}</Text>
-            </View>
-            <Text style={[styles.rankingText, !isEnabled && styles.disabledText]}>
-              {choice.text}
-            </Text>
-            <View style={styles.rankingControls}>
-              {index > 0 && isEnabled && (
-                <TouchableOpacity
-                  style={styles.rankingButton}
-                  onPress={() => moveItem(index, index - 1)}
-                >
-                  <Text style={styles.rankingButtonText}>▲</Text>
-                </TouchableOpacity>
-              )}
-              {index < currentOrder.length - 1 && isEnabled && (
-                <TouchableOpacity
-                  style={styles.rankingButton}
-                  onPress={() => moveItem(index, index + 1)}
-                >
-                  <Text style={styles.rankingButtonText}>▼</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        );
-      })}
+          return (
+            <DraggableItem
+              key={choiceValue}
+              choice={choice}
+              index={index}
+              onReorder={reorderItems}
+              isEnabled={isEnabled}
+              totalItems={currentOrder.length}
+            />
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -96,6 +162,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 12,
+    textAlign: 'center',
+  },
+  itemsContainer: {
+    gap: 8,
   },
   rankingItem: {
     flexDirection: 'row',
@@ -104,14 +174,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 4,
-    marginBottom: 8,
+    borderRadius: 8,
     backgroundColor: '#fff',
+    minHeight: ITEM_HEIGHT,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   rankingNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
@@ -127,29 +205,22 @@ const styles = StyleSheet.create({
     color: '#333',
     flex: 1,
   },
+  dragHandle: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  dragHandleText: {
+    fontSize: 16,
+    color: '#999',
+    fontWeight: 'bold',
+    lineHeight: 16,
+  },
   disabledOption: {
-    opacity: 0.5,
+    opacity: 0.6,
+    backgroundColor: '#f5f5f5',
   },
   disabledText: {
     color: '#999',
-  },
-  rankingControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rankingButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#10B981',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  rankingButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
   },
 });
 
