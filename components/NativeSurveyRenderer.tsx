@@ -1,43 +1,43 @@
 // Example React Native component using the SurveyJS Parser
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import {
-  createSurveyState,
-  parseSurveyJS,
-  validateSurveyData,
-  type ParsedQuestion,
-  type SurveyState
+    createSurveyState,
+    parseSurveyJS,
+    validateSurveyData,
+    type ParsedQuestion,
+    type SurveyState
 } from '../utils/surveyParser';
 import {
-  BooleanQuestion,
-  CheckboxQuestion,
-  ColorPicker,
-  DatePicker,
-  DropdownQuestion,
-  ExpressionQuestion,
-  FileUploadQuestion,
-  GeopointQuestion,
-  HtmlContent,
-  ImagePickerQuestion,
-  ImageQuestion,
-  MatrixDropdownQuestion,
-  MatrixQuestion,
-  MicrophoneQuestion,
-  MultipletextQuestion,
-  RadioGroupQuestion,
-  RangeSlider,
-  RankingQuestion,
-  RatingQuestion,
-  SignaturePadQuestion,
-  TagboxQuestion,
-  TextQuestion
+    BooleanQuestion,
+    CheckboxQuestion,
+    ColorPicker,
+    DatePicker,
+    DropdownQuestion,
+    ExpressionQuestion,
+    FileUploadQuestion,
+    GeopointQuestion,
+    HtmlContent,
+    ImagePickerQuestion,
+    ImageQuestion,
+    MatrixDropdownQuestion,
+    MatrixQuestion,
+    MicrophoneQuestion,
+    MultipletextQuestion,
+    RadioGroupQuestion,
+    RangeSlider,
+    RankingQuestion,
+    RatingQuestion,
+    SignaturePadQuestion,
+    TagboxQuestion,
+    TextQuestion
 } from './survey';
 
 interface NativeSurveyRendererProps {
@@ -530,6 +530,7 @@ function QuestionRenderer({
             onValueChange={onValueChange}
             isEnabled={isEnabled}
             questionName={question.name}
+            variant={question.variant as 'default' | 'manual' | 'trace' | 'area'}
             onLocationRequest={onLocationRequest}
           />
         );
