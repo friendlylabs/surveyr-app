@@ -174,18 +174,18 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               style={[localStyles.menuItem, { backgroundColor: colors.card }]}
-              onPress={showUnderDevelopment}
+              onPress={() => router.push('/zones/download')}
               activeOpacity={0.7}
             >
               <View style={localStyles.menuItemContent}>
                 <Ionicons
-                  name="key-outline"
+                  name="server-outline"
                   size={24}
                   color={colors.primary}
                   style={localStyles.menuIcon}
                 />
                 <Text style={[localStyles.menuText, { color: colors.text }]}>
-                  Survey Mode Pin
+                  Zones and Data
                 </Text>
               </View>
               <Ionicons
