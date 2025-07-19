@@ -3,13 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import AlertContainer from '../../components/AlertContainer';
@@ -31,6 +32,7 @@ export default function DownloadFormsScreen() {
   const { isDarkTheme, colors, styles: themeStyles } = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [cloudForms, setCloudForms] = useState<CloudForm[]>([]);
+  const [search, setSearch] = useState('');
   const [selectedFormIds, setSelectedFormIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -283,12 +285,20 @@ export default function DownloadFormsScreen() {
     );
   };
 
+  // Filtered forms based on search
+  const filteredForms = search.trim().length === 0
+    ? cloudForms
+    : cloudForms.filter(f =>
+        f.title.toLowerCase().includes(search.toLowerCase()) ||
+        (f.description && f.description.toLowerCase().includes(search.toLowerCase()))
+      );
+
   const renderContent = () => {
     if (isLoading) {
       return (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}> 
             Please wait, Fetching forms...
           </Text>
         </View>
@@ -309,16 +319,46 @@ export default function DownloadFormsScreen() {
     return (
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.formsContainer}>
-          {cloudForms.map(renderForm)}
+          {filteredForms.length === 0 ? (
+            <Text style={{ color: colors.textSecondary, textAlign: 'center', marginTop: 32 }}>
+              No forms found.
+            </Text>
+          ) : (
+            filteredForms.map(renderForm)
+          )}
         </View>
       </ScrollView>
     );
   };
 
   return (
-    <SafeAreaView style={[themeStyles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[themeStyles.container, { backgroundColor: colors.background }]}> 
       {/* Header */}
       <TopBar title="Cloud Forms" />
+
+      {/* Search Bar */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: colors.card,
+          borderRadius: 8,
+          paddingHorizontal: 12,
+          marginBottom: 4,
+          
+        }}>
+          <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            style={{ flex: 1, paddingVertical: 8 }}
+            placeholder="Search forms..."
+            placeholderTextColor={colors.textSecondary}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+        </View>
+      </View>
 
       {/* Content */}
       <View style={styles.content}>
@@ -378,6 +418,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  pageSearch: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   formsContainer: {
     paddingBottom: 100, // Space for download button
