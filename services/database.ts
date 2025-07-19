@@ -34,6 +34,17 @@ export interface FileRecord {
   created_at: string;
 }
 
+export interface Zone {
+  id?: number;
+  zone_id: string;
+  name: string;
+  hash: string;
+  content: string;
+  project_id: string;
+  downloaded_at: string;
+  updated_at: string;
+}
+
 class Database {
   private static instance: Database;
   private db: SQLite.SQLiteDatabase | null = null;
@@ -148,6 +159,18 @@ class Database {
           FOREIGN KEY (submission_id) REFERENCES submissions (id)
         );
 
+        CREATE TABLE IF NOT EXISTS zones (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          zone_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          hash TEXT NOT NULL,
+          content TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          downloaded_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(zone_id, project_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_forms_project_id ON forms (project_id);
         CREATE INDEX IF NOT EXISTS idx_submissions_form_id ON submissions (form_id);
         CREATE INDEX IF NOT EXISTS idx_submissions_project_id ON submissions (project_id);
@@ -155,6 +178,8 @@ class Database {
         CREATE INDEX IF NOT EXISTS idx_files_submission_id ON files (submission_id);
         CREATE INDEX IF NOT EXISTS idx_files_project_id ON files (project_id);
         CREATE INDEX IF NOT EXISTS idx_files_is_synced ON files (is_synced);
+        CREATE INDEX IF NOT EXISTS idx_zones_zone_id ON zones (zone_id);
+        CREATE INDEX IF NOT EXISTS idx_zones_project_id ON zones (project_id);
       `);
       
       // Migration: Add project_id to existing tables if they don't have it
@@ -200,17 +225,56 @@ class Database {
       const hasFilesProjectId = filesColumns.some((col: any) => col.name === 'project_id');
 
       if (!hasFilesProjectId) {
-        console.log('Migrating files table to include project_id');
+        // Add project_id column to files table
         await this.db.execAsync(`
           ALTER TABLE files ADD COLUMN project_id TEXT;
           UPDATE files SET project_id = '${this.currentProjectId}' WHERE project_id IS NULL;
         `);
+        console.log('Added project_id column to files table');
       }
+
+      // Migrate existing zone data from AsyncStorage to database (one-time migration)
+      await this.migrateZonesFromAsyncStorage();
 
       console.log('Data migration completed successfully');
     } catch (error) {
       console.error('Error during data migration:', error);
       // Don't throw here, let the app continue with existing data
+    }
+  }
+
+  private async migrateZonesFromAsyncStorage(): Promise<void> {
+    try {
+      const zonesString = await AsyncStorage.getItem('zones');
+      if (!zonesString) return; // No zones to migrate
+
+      const zones = JSON.parse(zonesString);
+      const zonesToMigrate: Omit<Zone, 'id' | 'project_id'>[] = [];
+
+      for (const [, zoneData] of Object.entries(zones)) {
+        const zone = zoneData as any;
+        if (zone.id && zone.name && zone.hash && zone.content) {
+          zonesToMigrate.push({
+            zone_id: zone.id,
+            name: zone.name,
+            hash: zone.hash,
+            content: JSON.stringify(zone.content),
+            downloaded_at: zone.downloaded_at || new Date().toISOString(),
+            updated_at: zone.downloaded_at || new Date().toISOString()
+          });
+        }
+      }
+
+      if (zonesToMigrate.length > 0) {
+        await this.addZones(zonesToMigrate);
+        console.log(`Migrated ${zonesToMigrate.length} zones from AsyncStorage to database`);
+        
+        // Optionally remove from AsyncStorage after successful migration
+        // await AsyncStorage.removeItem('zones');
+      }
+    } catch (error) {
+      console.error('Error migrating zones from AsyncStorage:', error);
+      // Don't throw, let the app continue
     }
   }
 
@@ -587,6 +651,119 @@ class Database {
     }
   }
 
+  // Zones methods
+  public async addZones(zones: Omit<Zone, 'id' | 'project_id'>[]): Promise<boolean> {
+    try {
+      await this.ensureInitialized();
+      if (!this.db) throw new Error('Database not initialized');
+
+      const projectId = await this.getCurrentProjectId();
+
+      await this.db.withTransactionAsync(async () => {
+        for (const zone of zones) {
+          await this.db!.runAsync(
+            `INSERT OR REPLACE INTO zones (zone_id, name, hash, content, project_id, downloaded_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              zone.zone_id,
+              zone.name,
+              zone.hash,
+              zone.content,
+              projectId,
+              zone.downloaded_at,
+              zone.updated_at
+            ]
+          );
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error adding zones:', error);
+      return false;
+    }
+  }
+
+  public async getZones(): Promise<Zone[]> {
+    try {
+      await this.ensureInitialized();
+      if (!this.db) throw new Error('Database not initialized');
+
+      const projectId = await this.getCurrentProjectId();
+      const result = await this.db.getAllAsync(
+        'SELECT * FROM zones WHERE project_id = ? ORDER BY updated_at DESC',
+        [projectId]
+      );
+      return result as Zone[];
+    } catch (error) {
+      console.error('Error fetching zones:', error);
+      return [];
+    }
+  }
+
+  public async getZoneById(zoneId: string): Promise<Zone | null> {
+    try {
+      await this.ensureInitialized();
+      if (!this.db) throw new Error('Database not initialized');
+
+      const projectId = await this.getCurrentProjectId();
+      const result = await this.db.getFirstAsync(
+        'SELECT * FROM zones WHERE zone_id = ? AND project_id = ?',
+        [zoneId, projectId]
+      );
+      return result as Zone | null;
+    } catch (error) {
+      console.error('Error fetching zone:', error);
+      return null;
+    }
+  }
+
+  public async deleteZone(zoneId: string): Promise<boolean> {
+    try {
+      await this.ensureInitialized();
+      if (!this.db) throw new Error('Database not initialized');
+
+      const projectId = await this.getCurrentProjectId();
+      await this.db.runAsync(
+        'DELETE FROM zones WHERE zone_id = ? AND project_id = ?',
+        [zoneId, projectId]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error deleting zone:', error);
+      return false;
+    }
+  }
+
+  public async getZoneContent(zoneId: string): Promise<any | null> {
+    try {
+      const zone = await this.getZoneById(zoneId);
+      if (!zone) return null;
+      
+      return JSON.parse(zone.content);
+    } catch (error) {
+      console.error('Error parsing zone content:', error);
+      return null;
+    }
+  }
+
+  public async countZones(): Promise<number> {
+    try {
+      await this.ensureInitialized();
+      if (!this.db) throw new Error('Database not initialized');
+
+      const projectId = await this.getCurrentProjectId();
+      const result = await this.db.getFirstAsync(
+        'SELECT COUNT(*) as count FROM zones WHERE project_id = ?',
+        [projectId]
+      );
+      return (result as any)?.count || 0;
+    } catch (error) {
+      console.error('Error counting zones:', error);
+      return 0;
+    }
+  }
+
   // Project management methods
   public async switchProject(newProjectId: string): Promise<void> {
     try {
@@ -712,26 +889,10 @@ export const countSubmissions = () => database.countSubmissions();
 export const countSubmissionsByFormId = (formId: string) => database.countSubmissionsByFormId(formId);
 export const getFormsWithRecentSubmissions = (limit?: number) => database.getFormsWithRecentSubmissions(limit);
 
-// Debug exports for testing project isolation
-export const debugDatabase = {
-  getInfo: () => database.getDebugInfo(),
-  forceReinit: () => database.forceReinitialize(),
-  switchProject: (projectId: string) => database.switchProject(projectId),
-  getCurrentProject: () => database.getCurrentProject(),
-  testProjectIsolation: async () => {
-    try {
-      const projectId = await database.getCurrentProject();
-      const forms = await database.getForms();
-      const submissions = await database.countSubmissions();
-      
-      return {
-        projectId,
-        formsCount: forms.length,
-        submissionsCount: submissions,
-        dbInfo: database.getDebugInfo()
-      };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-};
+// Zone exports
+export const addZones = (zones: Omit<Zone, 'id' | 'project_id'>[]) => database.addZones(zones);
+export const getZones = () => database.getZones();
+export const getZoneById = (zoneId: string) => database.getZoneById(zoneId);
+export const deleteZone = (zoneId: string) => database.deleteZone(zoneId);
+export const getZoneContent = (zoneId: string) => database.getZoneContent(zoneId);
+export const countZones = () => database.countZones();

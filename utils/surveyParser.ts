@@ -1,5 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 export const QuestTypesList = [
   { type: "radiogroup" },
   { 
@@ -1195,16 +1193,18 @@ export async function getChoicesFromZoneUrl(choicesByUrl: any, surveyData: Recor
     for (const [k, v] of urlObj.searchParams.entries()) {
       params[k] = replacePlaceholders(v);
     }
-    // Load stored zones from AsyncStorage
-    const zonesString = await AsyncStorage.getItem('zones');
-    if (!zonesString) return null;
+    // Load stored zones from database instead of AsyncStorage  
+    const { getZoneContent } = await import('../services/database');
+    const zoneData = await getZoneContent(zoneId);
     
-    const zones = JSON.parse(zonesString);
-    const zone = zones[zoneId];
+    if (!zoneData) {
+      console.warn(`Zone ${zoneId} not found in local database`);
+      return null;
+    }
+
+    console.log(`Loaded zone ${zoneId} from database`);
     
-    if (!zone || !zone.content) return null;
-    
-    let data = zone.content;
+    let data = zoneData;
     // If sheet specified, filter to that sheet
     if (params.sheet) {
       if (data[params.sheet]) {
