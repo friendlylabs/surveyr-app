@@ -15,8 +15,9 @@ import Toast from 'react-native-toast-message';
 import AlertContainer from '../../components/AlertContainer';
 import TopBar from '../../components/TopBar';
 import { useTheme } from '../../contexts/ThemeContext';
+import { addZones, Zone as DatabaseZone, getZones } from '../../services/database';
 
-interface Zone {
+interface CloudZone {
   id: string;
   name: string;
   hash: string;
@@ -25,9 +26,9 @@ interface Zone {
 export default function DownloadZonesScreen() {
   const { isDarkTheme, colors, styles: themeStyles } = useTheme();
   const [isLoading, setIsLoading] = useState(true);
-  const [zones, setZones] = useState<Zone[]>([]);
+  const [zones, setZones] = useState<CloudZone[]>([]);
   const [search, setSearch] = useState('');
-  const [downloadedZoneMeta, setDownloadedZoneMeta] = useState<Record<string, {downloaded_at?: string}>>({});
+  const [downloadedZones, setDownloadedZones] = useState<DatabaseZone[]>([]);
   const [selectedZoneIds, setSelectedZoneIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -101,24 +102,23 @@ export default function DownloadZonesScreen() {
     }
   }, []);
 
-  // Load downloaded zone meta (downloaded_at) from AsyncStorage
-  useEffect(() => {
-    const loadDownloadedMeta = async () => {
-      const zonesString = await AsyncStorage.getItem('zones');
-      if (zonesString) {
-        try {
-          const parsed = JSON.parse(zonesString);
-          const meta: Record<string, {downloaded_at?: string}> = {};
-          for (const [id, zone] of Object.entries(parsed)) {
-            const z: any = zone;
-            meta[id] = { downloaded_at: z.downloaded_at };
-          }
-          setDownloadedZoneMeta(meta);
-        } catch {}
-      }
-    };
-    loadDownloadedMeta();
+  // Load downloaded zones from database
+  const loadDownloadedZones = useCallback(async () => {
+    try {
+      const zones = await getZones();
+      setDownloadedZones(zones);
+      
+      // Auto-select downloaded zones
+      const downloadedIds = new Set(zones.map(z => z.zone_id));
+      setSelectedZoneIds(downloadedIds);
+    } catch (error) {
+      console.error('Error loading downloaded zones:', error);
+    }
   }, []);
+
+  useEffect(() => {
+    loadDownloadedZones();
+  }, [loadDownloadedZones]);
 
   useEffect(() => {
     fetchZones();
@@ -172,7 +172,7 @@ export default function DownloadZonesScreen() {
       }
 
       // For each selected zone, download its data
-      const downloadedZones: Record<string, any> = {};
+      const downloadedZonesData: Omit<DatabaseZone, 'id' | 'project_id'>[] = [];
       const errors: string[] = [];
 
       for (const zoneId of selectedZoneIds) {
@@ -198,51 +198,49 @@ export default function DownloadZonesScreen() {
 
           const zoneData = await response.json();
           
-          // Store the zone data
-          downloadedZones[zoneId] = {
-            id: zoneId,
+          // Store the zone data for database insertion
+          const now = new Date().toISOString();
+          downloadedZonesData.push({
+            zone_id: zoneId,
             name: zone.name,
             hash: zone.hash,
-            content: zoneData,
-            downloaded_at: new Date().toISOString()
-          };
+            content: JSON.stringify(zoneData),
+            downloaded_at: now,
+            updated_at: now
+          });
         } catch (err) {
           console.error(`Error downloading zone ${zoneId}:`, err);
           errors.push(`Failed to download ${zones.find(z => z.id === zoneId)?.name || zoneId}`);
         }
       }
 
-      // Save to AsyncStorage
-      if (Object.keys(downloadedZones).length > 0) {
+      // Save to database
+      if (downloadedZonesData.length > 0) {
         try {
-          // First get existing zones data
-          const existingZonesString = await AsyncStorage.getItem('zones');
-          const existingZones = existingZonesString ? JSON.parse(existingZonesString) : {};
+          const success = await addZones(downloadedZonesData);
           
-          // Merge with new downloads
-          const updatedZones = { ...existingZones, ...downloadedZones };
-          
-          await AsyncStorage.setItem('zones', JSON.stringify(updatedZones));
-          // Update local meta state
-          const meta: Record<string, {downloaded_at?: string}> = {};
-          for (const [id, zone] of Object.entries(updatedZones)) {
-            const z: any = zone;
-            meta[id] = { downloaded_at: z.downloaded_at };
+          if (success) {
+            // Refresh downloaded zones list
+            await loadDownloadedZones();
+            
+            Toast.show({
+              type: 'success',
+              text1: 'Zones downloaded',
+              text2: `Successfully downloaded ${downloadedZonesData.length} zones.`,
+            });
+          } else {
+            Toast.show({
+              type: 'error',
+              text1: 'Storage error',
+              text2: 'Failed to save zones to database.',
+            });
           }
-          setDownloadedZoneMeta(meta);
-          // Also check all downloaded zones
-          setSelectedZoneIds(new Set([...selectedZoneIds, ...Object.keys(downloadedZones)]));
-          Toast.show({
-            type: 'success',
-            text1: 'Zones downloaded',
-            text2: `Successfully downloaded ${Object.keys(downloadedZones).length} zones.`,
-          });
         } catch (err) {
-          console.error('Error saving zones to storage:', err);
+          console.error('Error saving zones to database:', err);
           Toast.show({
             type: 'error',
             text1: 'Storage error',
-            text2: 'Failed to save zones to local storage.',
+            text2: 'Failed to save zones to database.',
           });
         }
       }
@@ -267,9 +265,11 @@ export default function DownloadZonesScreen() {
     }
   };
 
-  const renderZone = (zone: Zone) => {
+  const renderZone = (zone: CloudZone) => {
     const isSelected = selectedZoneIds.has(zone.id);
-    const lastDownloaded = downloadedZoneMeta[zone.id]?.downloaded_at;
+    const downloadedZone = downloadedZones.find(dz => dz.zone_id === zone.id);
+    const lastDownloaded = downloadedZone?.downloaded_at;
+    
     return (
       <TouchableOpacity
         key={zone.id}
