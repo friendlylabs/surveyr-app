@@ -1,15 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import AlertContainer from '../../components/AlertContainer';
@@ -86,13 +87,132 @@ export default function FormsListScreen() {
     );
   };
 
+  // Helper to delete a submission by id
+  async function deleteSubmissionById(submissionId: number) {
+    if (database.deleteSubmission) {
+      return database.deleteSubmission(submissionId);
+    }
+  }
+
   const handleSyncForm = async (form: Form) => {
-    // TODO: Implement sync functionality
-    Toast.show({
-      type: 'info',
-      text1: 'Sync Feature',
-      text2: 'Form synchronization will be implemented soon',
-    });
+    try {
+      // 1. Get auth details
+      const [baseUrl, token] = await Promise.all([
+        AsyncStorage.getItem('projectUrl'),
+        AsyncStorage.getItem('token'),
+      ]);
+      if (!baseUrl || !token) {
+        Toast.show({
+          type: 'error',
+          text1: 'Not Authenticated',
+          text2: 'Please login again to sync data.',
+        });
+        return;
+      }
+
+      // 2. Get unsynced submissions for this form
+      let allSubs = await database.getSubmissionsByFormId(form.id);
+      // If you have an is_synced property, filter by it. Otherwise, treat all as unsynced.
+      let unsynced = allSubs.filter((s: any) => !s.is_synced);
+      if (unsynced.length === 0) {
+        Toast.show({
+          type: 'success',
+          text1: 'No Pending Data',
+          text2: 'All submissions for this form are already synced.',
+        });
+        return;
+      }
+
+      let total = unsynced.length;
+      let synced = 0;
+      let failed = 0;
+      let batchSize = 10;
+
+      while (unsynced.length > 0) {
+        const batch = unsynced.slice(0, batchSize);
+        let endpoint = '';
+        let body: FormData;
+
+        if (batch.length === 1) {
+          endpoint = `${baseUrl.replace(/\/$/, '')}/collection/store`;
+          body = new FormData();
+          body.append('formId', form.id);
+          body.append('content', batch[0].content);
+        } else {
+          endpoint = `${baseUrl.replace(/\/$/, '')}/collection/store/multiple`;
+          body = new FormData();
+          body.append('formId', form.id);
+          body.append('content', JSON.stringify(batch.map(s => JSON.parse(s.content))));
+        }
+
+        // Show progress
+        Toast.show({
+          type: 'info',
+          text1: 'Syncing...',
+          text2: `Uploading ${Math.min(batch.length, unsynced.length)} of ${total}...`,
+          autoHide: false,
+        });
+
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            body,
+          });
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server error: ${errText}`);
+          }
+          // On success, delete synced submissions
+          for (const sub of batch) {
+            if (sub.id) {
+              await deleteSubmissionById(sub.id);
+            }
+          }
+          synced += batch.length;
+        } catch (err) {
+          failed += batch.length;
+          let msg = 'Could not sync some submissions.';
+          if (err instanceof Error) msg = err.message;
+          Toast.show({
+            type: 'error',
+            text1: 'Sync Failed',
+            text2: msg,
+          });
+          break; // Stop on first failure
+        }
+        // Remove batch from unsynced
+        unsynced = unsynced.slice(batchSize);
+      }
+
+      Toast.hide();
+      if (synced > 0) {
+        Toast.show({
+          type: 'success',
+          text1: 'Sync Complete',
+          text2: `Uploaded ${synced} submission${synced > 1 ? 's' : ''} for "${form.title}".`,
+        });
+        // Optionally reload forms or submissions list
+        loadForms?.();
+      }
+      if (failed > 0) {
+        Toast.show({
+          type: 'error',
+          text1: 'Some Failed',
+          text2: `${failed} submission${failed > 1 ? 's' : ''} could not be synced.`,
+        });
+      }
+    } catch (err) {
+      let msg = 'Could not sync submissions. Try again.';
+      if (err instanceof Error) msg = err.message;
+      Toast.show({
+        type: 'error',
+        text1: 'Sync Failed',
+        text2: msg,
+      });
+    }
   };
 
   const handleDeleteForm = (form: Form) => {
