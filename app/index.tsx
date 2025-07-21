@@ -18,7 +18,6 @@ import Toast from 'react-native-toast-message';
 import { database } from '../services/database';
 
 export default function Index() {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
@@ -91,8 +90,7 @@ export default function Index() {
     const startTime = Date.now();
     
     const initializeApp = async () => {
-      console.log('Getting camera permissions...');
-      await getCameraPermissions();
+      // Don't request camera permissions on startup, only when needed
       
       console.log('Checking existing session...');
       await checkExistingSession();
@@ -127,10 +125,7 @@ export default function Index() {
     return () => clearTimeout(timer);
   }, [checkExistingSession]);
 
-  const getCameraPermissions = async () => {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    setHasPermission(status === 'granted');
-  };
+  // Removed unused getCameraPermissions function
 
   const handleQRCodeScan = async (data: string) => {
     if (isLoading) return;
@@ -205,26 +200,33 @@ export default function Index() {
     }
   };
 
-  const handleScanPress = () => {
-    if (hasPermission === null) {
-      Alert.alert('Camera Permission', 'Requesting camera permission...');
-      getCameraPermissions();
-      return;
+  const handleScanPress = async () => {
+    // Always request camera permission when the scan button is pressed
+    try {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      
+      if (status === 'granted') {
+        // Permission granted, show scanner
+        setShowScanner(true);
+      } else {
+        // Permission denied
+        Alert.alert(
+          'Camera Permission Required',
+          'Camera access is needed to scan QR codes. Please enable it in settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error requesting camera permission:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Could not request camera permission',
+      });
     }
-    
-    if (hasPermission === false) {
-      Alert.alert(
-        'Camera Permission Required',
-        'Camera access is needed to scan QR codes. Please enable it in settings.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => Linking.openSettings() },
-        ]
-      );
-      return;
-    }
-
-    setShowScanner(true);
   };
 
   const handleManualEntry = () => {
