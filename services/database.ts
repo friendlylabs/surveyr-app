@@ -872,6 +872,17 @@ class Database {
       this.initialized = false;
     }
   }
+
+  // Delete a submission by id
+  public async deleteSubmission(submissionId: number): Promise<void> {
+    await this.ensureInitialized();
+    if (!this.db) throw new Error('Database not initialized');
+    const projectId = await this.getCurrentProjectId();
+    await this.db.runAsync(
+      'DELETE FROM submissions WHERE id = ? AND project_id = ?',
+      [submissionId, projectId]
+    );
+  }
 }
 
 // Export singleton instance
